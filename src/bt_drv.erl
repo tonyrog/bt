@@ -27,22 +27,63 @@
 
 -include("../include/bt.hrl").
 
-
 %% API
 -export([start_link/0, start/0, stop/0]).
--compile(export_all).
+-export([ping/0]).
+-export([register/2, unregister/1]).
+-export([devices/0]).
+-export([recent_devices/0]).
+-export([paired_devices/0]).
+-export([favorite_devices/0]).
+-export([device_info/2]).
+-export([local_info/1]).
+-export([service_info/1, service_info/2]).
+-export([service_query/1, service_query/2]).
+-export([service_add/1, service_add_persist/1]).
+-export([service_del/1]).
+-export([service_rfcomm/1]).
+-export([connect/1, connect/2, connect/3, disconnect/1]).
+-export([remote_name/1, remote_name/2]).
+
+-export([inquiry_start/1,
+	 inquiry_stop/1,
+	 inquiry_flush/1]).
+
+-export([rfcomm_open/2,
+	 rfcomm_close/1,
+	 rfcomm_send/2,
+	 rfcomm_listen/1,
+	 rfcomm_accept/1,
+	 rfcomm_mtu/1,
+	 rfcomm_channel/1,
+	 rfcomm_address/1]).
+
+-export([l2cap_open/2,
+	 l2cap_close/1,
+	 l2cap_send/2,
+	 l2cap_listen/1,
+	 l2cap_accept/1,
+	 l2cap_mtu/1,
+	 l2cap_psm/1,
+	 l2cap_address/1]).
+
+-export([debug/1]).
+
+%% utils
+-export([decode_class/1,
+	 encode/1, decode/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
--import(lists, [reverse/1]).
+
+%% -define(debug, true).
 
 -ifdef(debug).
 -define(dbg(Fmt,As), io:format("~s:~w:" Fmt "\n", [?FILE,?LINE | As])).
 -else.
 -define(dbg(Fmt,As), ok).
 -endif.
-
 
 -define(SERVER, bt_drv).
 
@@ -100,6 +141,7 @@
 -define(CMD_SERVICE_DEL,      14).
 -define(CMD_SERVICE_RFCOMM,   15).
 -define(CMD_LOCAL_INFO,       16).
+-define(CMD_DEBUG,            17).
 
 %% RCCOMM Channels
 -define(CMD_RFCOMM_OPEN,      20).
@@ -201,6 +243,16 @@
 	if (N)==16#ffffffff -> 1;
 	   true -> (N)+1
 	end).
+
+-define(DLOG_DEBUG,     7).
+-define(DLOG_INFO,      6).
+-define(DLOG_NOTICE,    5).
+-define(DLOG_WARNING,   4).
+-define(DLOG_ERROR,     3).
+-define(DLOG_CRITICAL,  2).
+-define(DLOG_ALERT,     1).
+-define(DLOG_EMERGENCY, 0).
+-define(DLOG_NONE,     -1).
 	
 %%====================================================================
 %% API
@@ -208,6 +260,9 @@
 
 ping() ->
     gen_server:call(?SERVER, ping).
+
+debug(Level) when is_atom(Level) ->
+    gen_server:call(?SERVER, {debug, level(Level)}).
 
 register(Type, MFA={M,F,As}) when is_atom(M),is_atom(F),is_list(As) ->
     ets:insert(btreg, {Type,MFA}).
@@ -233,7 +288,7 @@ favorite_devices() ->
     gen_server:call(?SERVER, favorite_devices).
 
 device_info(Address, Info) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     case gen_server:call(?SERVER, {device_info, Addr, Info}) of
 	{ok,InfoReply} ->
 	    {ok, map2(fun(A,B) -> {A,B} end, Info, InfoReply)};
@@ -254,7 +309,7 @@ service_info(Address) ->
     service_info(Address,<<>>).
 
 service_info(Address, UUID) ->
-    case bt:getaddr(Address) of
+    case bt_util:getaddr(Address) of
 	{ok,Addr} ->
 	    gen_server:call(?SERVER, {service_info, Addr, UUID});
 	Error -> Error
@@ -264,7 +319,7 @@ service_query(Address) ->
     service_query(Address, << >>).
 
 service_query(Address, UUID) ->
-    case bt:getaddr(Address) of
+    case bt_util:getaddr(Address) of
 	{ok,Addr} ->
 	    gen_server:call(?SERVER, {service_query, Addr, UUID}, 20000);
 	Error -> Error
@@ -290,19 +345,19 @@ service_rfcomm(Handle) when is_integer(Handle) ->
     
 
 connect(Address) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {connect, Addr}, 20000).
 
 connect(Address,Timeout) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {connect, Addr, Timeout, false}, 20000).
 
 connect(Address,Timeout,Auth) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {connect, Addr, Timeout, Auth}, 20000).
 
 disconnect(Address) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {disconnect, Addr}, 10000).
 
 remote_name(Address) ->
@@ -339,7 +394,7 @@ inquiry_flush(Ref) ->
     end.
 
 rfcomm_open(Address, Channel) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {rfcomm_open, self(), Addr, Channel}, 20000).
 
 rfcomm_close(Ref) ->
@@ -368,7 +423,7 @@ rfcomm_address(Ref) ->
 
 %% L2CAP
 l2cap_open(Address, Psm) ->
-    {ok,Addr} = bt:getaddr(Address),
+    {ok,Addr} = bt_util:getaddr(Address),
     gen_server:call(?SERVER, {l2cap_open, self(), Addr, Psm}, 20000).
 
 l2cap_close(Ref) ->
@@ -421,7 +476,7 @@ stop() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    Driver = filename:join([code:priv_dir(bt),"bin","bt_drv"]),
+    Driver = filename:join([code:priv_dir(bt),"bt"]),
     Port = open_port({spawn, Driver}, [{packet,4},binary,eof]),
     Reg = ets:new(btreg, [public, set, named_table]),
     {ok, #state{ bt_port = Port, reg = Reg }}.
@@ -438,6 +493,10 @@ init([]) ->
 handle_call(ping, From, State) ->
     CmdId = State#state.cmd_id,
     State1 = bt_command(From, State, ?CMD_PING,  CmdId, []),
+    {noreply, State1};
+handle_call({debug,Level}, From, State) ->
+    CmdId = State#state.cmd_id,
+    State1 = bt_command(From, State, ?CMD_DEBUG,  CmdId, <<Level:32/signed>>),
     {noreply, State1};
 handle_call(recent_devices, From, State) ->
     CmdId = State#state.cmd_id,
@@ -1274,11 +1333,11 @@ decode(Data, Stack) ->
 	<<?LIST_END, Rest/binary>> ->
 	    ?dbg("LIST_END",[]),
 	    {L,[_|Stack1]} = lists:splitwith(fun(X) -> X =/= list end, Stack),
-	    decode(Rest, [reverse(L) | Stack1]);
+	    decode(Rest, [lists:reverse(L) | Stack1]);
 	<<?TUPLE_END, Rest/binary>> ->
 	    ?dbg("TUPLE_END",[]),
 	    {L,[_|Stack1]}=lists:splitwith(fun(X) -> X =/= tuple end, Stack),
-	    decode(Rest, [list_to_tuple(reverse(L)) | Stack1]);
+	    decode(Rest, [list_to_tuple(lists:reverse(L)) | Stack1]);
 	%% EXTENSIONS
 	<<?DATE, Date:32, Rest/binary>> ->
 	    ?dbg("DATE: ~w",[Date]),
@@ -1303,7 +1362,6 @@ is_address(Addr) ->
        true -> false
     end.
 	    
-
 is_channel(C) when is_integer(C), C >= 1, C =< 30 ->
     true;
 is_channel(_) -> false.
@@ -1317,9 +1375,15 @@ is_timeout(T) when is_integer(T), T>=0 ->
     true;
 is_timeout(_) -> false.
 
-    
-
-	    
-	
-
-
+%% convert symbolic to numeric level
+level(true)  -> ?DLOG_DEBUG;
+level(false) -> ?DLOG_NONE;
+level(debug) -> ?DLOG_DEBUG;
+level(info)  -> ?DLOG_INFO;
+level(notice) -> ?DLOG_NOTICE;
+level(warning) -> ?DLOG_WARNING;
+level(error) -> ?DLOG_ERROR;
+level(critical) -> ?DLOG_CRITICAL;
+level(alert) -> ?DLOG_ALERT;
+level(emergency) -> ?DLOG_EMERGENCY;
+level(none) -> ?DLOG_NONE.

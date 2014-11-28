@@ -536,7 +536,7 @@ transport(Opts, Address) ->
 		    case inet_parse:address(Address) of
 			{ok, _} -> tcp;
 			_ ->
-			    case bt:getaddr(Address) of
+			    case bt_util:getaddr(Address) of
 				{ok,_} -> rfcomm;
 				_ ->
 				    case inet_parse:domain(Address) of

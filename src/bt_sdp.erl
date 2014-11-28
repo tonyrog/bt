@@ -646,6 +646,7 @@ decode_sdp_value({int64,Int}) when is_integer(Int) ->   Int;
 decode_sdp_value({int128,Int}) when is_integer(Int) ->  Int;
 decode_sdp_value({boolean,Bool}) -> Bool;
 decode_sdp_value({text,Text}) -> Text;
+decode_sdp_value({url,Url}) -> Url;
 decode_sdp_value({sequence,Seq}) ->
     {sequence,map(fun decode_sdp_value/1, Seq)};
 decode_sdp_value({alternative,Alt}) ->

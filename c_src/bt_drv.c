@@ -22,19 +22,12 @@
 #include "Data.h"
 #include "bt_lib.h"
 
-#ifdef debug
-#define DBG(fmt,...) fprintf(stderr,"%s:%d:" fmt "\r\n", __FILE__, __LINE__, __VA_ARGS__)
-#else
-#define DBG(fmt,...)
-#endif
-
 /* Cast to MacTypes */
 #define get_Float32(d, ptr) get_float32((d),(float*)(ptr))
 #define get_Float64(d, ptr) get_float64((d),(double*)(ptr))
-#define get_UInt32(d, ptr) get_uint32((d),(u_int32_t*)(ptr))
-#define get_UInt16(d, ptr) get_uint16((d),(u_int16_t*)(ptr))
-#define get_UInt8(d, ptr) get_uint8((d),(u_int8_t*)(ptr))
-
+#define get_UInt32(d, ptr) get_uint32((d),(uint32_t*)(ptr))
+#define get_UInt16(d, ptr) get_uint16((d),(uint16_t*)(ptr))
+#define get_UInt8(d, ptr) get_uint8((d),(uint8_t*)(ptr))
 
 #define CMD_PING              1
 #define CMD_RECENT_DEVICES    2
@@ -52,6 +45,7 @@
 #define CMD_SERVICE_DEL      14
 #define CMD_SERVICE_RFCOMM   15
 #define CMD_LOCAL_INFO       16
+#define CMD_DEBUG            17
 
 /* RCCOMM Channels */
 #define CMD_RFCOMM_OPEN      20
@@ -72,8 +66,6 @@
 #define CMD_L2CAP_MTU         35
 #define CMD_L2CAP_ADDRESS     36
 #define CMD_L2CAP_PSM         37
-
-
 
 /* device info codes */
 #define NFO_DEVICE_NAME             1  /* string */
@@ -147,6 +139,59 @@ MainData main_info = { 0, {0,0,0,0}, NULL, 0, 0, NULL, NULL };
 PipeContext in_ctx = { 0, &main_info, NULL, NULL, NULL };
 PipeContext out_ctx = { 0, &main_info, NULL, NULL, NULL };
 
+
+#define DLOG_DEBUG     7
+#define DLOG_INFO      6
+#define DLOG_NOTICE    5
+#define DLOG_WARNING   4
+#define DLOG_ERROR     3
+#define DLOG_CRITICAL  2
+#define DLOG_ALERT     1
+#define DLOG_EMERGENCY 0
+#define DLOG_NONE     -1
+
+#ifndef DLOG_DEFAULT
+#define DLOG_DEFAULT DLOG_NONE
+#endif
+
+#define DLOG(level,file,line,args...) do {				\
+	if (((level) == DLOG_EMERGENCY) ||				\
+	    ((debug_level >= 0) && ((level) <= debug_level))) {		\
+	    int save_errno = errno;					\
+	    emit_log((level),(file),(line),args);			\
+	    errno = save_errno;						\
+	}								\
+    } while(0)
+
+#define DEBUGF(args...) DLOG(DLOG_DEBUG,__FILE__,__LINE__,args)
+#define INFOF(args...)  DLOG(DLOG_INFO,__FILE__,__LINE__,args)
+#define NOTICEF(args...)  DLOG(DLOG_NOTICE,__FILE__,__LINE__,args)
+#define WARNINGF(args...)  DLOG(DLOG_WARNING,__FILE__,__LINE__,args)
+#define ERRORF(args...)  DLOG(DLOG_ERROR,__FILE__,__LINE__,args)
+#define CRITICALF(args...)  DLOG(DLOG_CRITICAL,__FILE__,__LINE__,args)
+#define ALERTF(args...)  DLOG(DLOG_ALERT,__FILE__,__LINE__,args)
+#define EMERGENCYF(args...)  DLOG(DLOG_EMERGENCY,__FILE__,__LINE__,args)
+
+static int debug_level = DLOG_DEFAULT;
+
+static void emit_log(int level, char* file, int line, ...)
+{
+    va_list ap;
+    char* fmt;
+
+    if ((level == DLOG_EMERGENCY) ||
+	((debug_level >= 0) && (level <= debug_level))) {
+	int save_errno = errno;
+	va_start(ap, line);
+	fmt = va_arg(ap, char*);
+	fprintf(stderr, "%s:%d: ", file, line); 
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, "\r\n");
+	va_end(ap);
+	errno = save_errno;
+    }
+}
+
 /* Extension to Data.h */
 
 static inline void put_date(Data* data, NSDate* date)
@@ -165,7 +210,7 @@ static inline void put_date(Data* data, NSDate* date)
 static inline void put_ns_string(Data* data, NSString* str)
 {
     char buffer[1024];
-    if ([str getCString:buffer maxLength:1024 encoding:NSASCIIStringEncoding])
+    if ([str getCString:buffer maxLength:1024 encoding:NSUTF8StringEncoding])
 	put_string(data, buffer);
     else
 	put_string(data, "?");
@@ -203,7 +248,7 @@ static Subscription* new_subscription(SubscriptionType type, UInt32 id, void* ha
 static void free_subscription(Subscription* s)
 {
     if ((s->wait != NULL) && (s->wait != s))
-	DBG("WARNING: subscription is still waiting in free", 0);
+	DEBUGF("WARNING: subscription is still waiting in free", 0);
     if (s->handle != NULL) {
 	switch(s->type) {
 	case SDP: {
@@ -536,7 +581,7 @@ static void put_io_error(Data* data, IOReturn error, int type)
 	break;
 	/* Add HCI error codes */
     default:
-	DBG("ERROR: code=%d, sub=%d, system=%d",
+	DEBUGF("ERROR: code=%d, sub=%d, system=%d",
 	    err_get_code(error), 
 	    err_get_sub(error), 
 	    err_get_system(error));
@@ -589,11 +634,11 @@ void bt_device_list(NSArray* devices, Data* data_out)
     else
 	n = [devices count];
     /* reply:8 cmdid:32 LIST ADDR <addr> ADDR <addr> LIST_END */
-    DBG("bt_device_list n=%d", n);
+    DEBUGF("bt_device_list n=%d", n);
 
     put_tag(data_out, LIST);
     for (i = 0; i < n; i++) {
-	DBG("bt_device_list i=%d, n=%d", n);
+	DEBUGF("bt_device_list i=%d, n=%d", n);
 	IOBluetoothDevice* device = (IOBluetoothDevice*)
 	    [devices objectAtIndex:i];
 	const BluetoothDeviceAddress* bt_addr = [device getAddress];
@@ -610,122 +655,122 @@ CFIndex CFStringGetBytes(CFStringRef theString, CFRange range, CFStringEncoding 
  * Format a binary version of SDP Element
  */
 	
-UInt32 put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out)
+int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
 {
     BluetoothSDPDataElementTypeDescriptor sdp_type;
     BluetoothSDPDataElementSizeDescriptor sdp_size;
     UInt32 byte_size;
 
-#define VALUE_RETURN(size,hdr) do { \
-        if ((size)!=byte_size) { DBG("size mismatch expected=%d", size); } \
-	return (size)+(hdr)+1; \
-    } while(0)
-
     sdp_type = [value getTypeDescriptor];
     sdp_size = [value getSizeDescriptor];
     byte_size = [value getSize];
-    DBG("type=%d, size=%d, bytes_size=%d",sdp_type,sdp_size,byte_size);
-
-    put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));  /* output the SDP tag */
+    DEBUGF("    %d: sdp:tag=%d,size=%d, avail=%d",
+	   level,sdp_type<<3|(sdp_size&7),byte_size,
+	   data_avail(data_out));
 
     switch(sdp_type) {
     case kBluetoothSDPDataElementTypeNil: /* only a tag byte */
-	VALUE_RETURN(0,0);
-
+	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
+	break;
     case kBluetoothSDPDataElementTypeUnsignedInt:
     case kBluetoothSDPDataElementTypeSignedInt: {
+	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	switch(sdp_size) {
 	case 0: {
 	    NSNumber* num = [value getNumberValue];
 	    put_UINT8(data_out, num.unsignedCharValue);
-	    VALUE_RETURN(1,0);
+	    break;
 	}
 	case 1: {
 	    NSNumber* num = [value getNumberValue];
 	    put_UINT16(data_out, num.unsignedShortValue); 
-	    VALUE_RETURN(2,0);
+	    break;
 	}
 	case 2: {
 	    NSNumber* num = [value getNumberValue];
 	    put_UINT32(data_out, num.unsignedLongValue); 
-	    VALUE_RETURN(4,0);
+	    break;
 	}
 	case 3: {
 	    NSNumber* num = [value getNumberValue];
 	    put_UINT64(data_out, num.unsignedLongLongValue); 
-	    VALUE_RETURN(8,0);
+	    break;
 	}
 	case 4: {
 	    NSData* data = [value getDataValue];
 	    CFIndex len = [data length];
 	    const void* ptr = [data bytes];
-	    data_add(data_out, (u_int8_t*)ptr, len);
-	    VALUE_RETURN(16,0);
+	    data_add(data_out, (uint8_t*)ptr, len);
+	    break;
 	}
+	default:
+	    return -1;
 	}
-	return -1;
+	break;
     }
 
     case kBluetoothSDPDataElementTypeUUID: {
 	IOBluetoothSDPUUID* uuid = [value getUUIDValue];
 	CFIndex len = [uuid length];
 	const void* ptr = [uuid bytes];
+	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	switch(sdp_size) {
 	case 1:
-	    data_add(data_out, (u_int8_t*)ptr, len);
-	    VALUE_RETURN(2,0);
+	    data_add(data_out, (uint8_t*)ptr, len);
+	    break;
 	case 2:
-	    data_add(data_out, (u_int8_t*)ptr, len);
-	    VALUE_RETURN(4,0);
+	    data_add(data_out, (uint8_t*)ptr, len);
+	    break;
 	case 4:
-	    data_add(data_out, (u_int8_t*)ptr, len);
-	    VALUE_RETURN(16,0);
+	    data_add(data_out, (uint8_t*)ptr, len);
+	    break;
+	default:
+	    return -1;
 	}
-	return -1;
+	break;
     }
 
     case kBluetoothSDPDataElementTypeURL:
     case kBluetoothSDPDataElementTypeString: {
 	NSString* str = [value getStringValue];
+	NSUInteger size = [str lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
 	NSUInteger len = [str length];
 	NSUInteger ulen;
 	NSRange range = NSMakeRange(0, len);
-	u_int8_t* ptr;
+	uint8_t* ptr;
 
-	switch(sdp_size) {
-	case 5:
-	    ptr = data_alloc(data_out, 1+len);
-	    PUT_UINT8(ptr, len); ptr += 1;
-	    /* FIXME: how can we make this correct ? */
-	    [str getBytes:(void*)ptr  maxLength:len+1
-	     usedLength:&ulen encoding: kCFStringEncodingISOLatin1
-	     options:0 range:range remainingRange:NULL];
-	    VALUE_RETURN(len,1);
-	case 6:
-	    ptr = data_alloc(data_out, 2+len);
-	    PUT_UINT16(ptr, len); ptr += 2;
-	    /* FIXME: how can we make this correct ? */
-	    [str getBytes:(void*)ptr  maxLength:len+1
-	     usedLength:&ulen encoding: kCFStringEncodingISOLatin1
-	     options:0 range:range remainingRange:NULL];
-	    VALUE_RETURN(len,2);
-	case 7:
-	    ptr = data_alloc(data_out, 4+len);
-	    PUT_UINT32(ptr, len); ptr += 4;
-	    /* FIXME: how can we make this correct ? */
-	    [str getBytes:(void*)ptr  maxLength:len+1
-	     usedLength:&ulen encoding: kCFStringEncodingISOLatin1
-	     options:0 range:range remainingRange:NULL];
-	    VALUE_RETURN(len,4);
+	if (size < 256) {
+	    put_UINT8(data_out, ((sdp_type<<3)|5));
+	    ptr = data_alloc(data_out, 1+size);
+	    PUT_UINT8(ptr, size); ptr += 1;
+	    [str getBytes:(void*)ptr  maxLength:size
+	       usedLength:&ulen encoding:NSUTF8StringEncoding
+		  options:0 range:range remainingRange:NULL];
 	}
-	return -1;
+	else if (size < 65536) {
+	    put_UINT8(data_out, ((sdp_type<<3)|6));
+	    ptr = data_alloc(data_out, 2+size);
+	    PUT_UINT16(ptr, size); ptr += 2;
+	    [str getBytes:(void*)ptr maxLength:size
+	     usedLength:&ulen encoding:NSUTF8StringEncoding
+	     options:0 range:range remainingRange:NULL];
+	}
+	else {
+	    put_UINT8(data_out, ((sdp_type<<3)|7));
+	    ptr = data_alloc(data_out, 4+size);
+	    PUT_UINT32(ptr, size); ptr += 4;
+	    [str getBytes:(void*)ptr maxLength:size
+	       usedLength:&ulen encoding:NSUTF8StringEncoding
+		  options:0 range:range remainingRange:NULL];
+	}
+	break;
     }
 
     case kBluetoothSDPDataElementTypeBoolean: {
 	NSNumber* num = [value getNumberValue];
-	if (sdp_size != 0) return -1;
+	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	put_UINT8(data_out, num.unsignedCharValue);
-	VALUE_RETURN(1,0);
+	break;
     }
 
     case kBluetoothSDPDataElementTypeDataElementSequence:
@@ -733,69 +778,30 @@ UInt32 put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out)
 	NSArray* array = [value getArrayValue];
 	NSUInteger n = array.count;
 	NSUInteger i;
-	UInt32  hdr_len = 0;
-	UInt32  byte_sum = 0;
+	size_t bin_size;
+	size_t used_size;
+	intptr_t patch_offset;
 
-	switch(sdp_size) {
-	case 5: put_UINT8(data_out,byte_size);  hdr_len=1; break;
-	case 6: put_UINT16(data_out,byte_size); hdr_len=2; break;
-	case 7: put_UINT32(data_out,byte_size); hdr_len=4; break;
-	default: return -1;
-	}
-	    
+	// always use 4 byte header so we can patch 
+	put_UINT8(data_out, ((sdp_type<<3)|(7)));
+	patch_offset = data_used(data_out);  /* keep offset */
+	put_UINT32(data_out, 0);             /* patch this later */
+
+	used_size = data_used(data_out);    // size before
 	for (i = 0; i < n; i++) {
 	    IOBluetoothSDPDataElement* elem = 
 		(IOBluetoothSDPDataElement*) [array objectAtIndex:i];
-	    UInt32 elem_size;
-	    if ((elem_size = put_sdp_elem(elem, data_out)) <= 0)
-		return elem_size;
-	    byte_sum += elem_size;
+	    if (put_sdp_elem(elem, data_out, level+1) < 0)
+		return -1;
 	}
-	VALUE_RETURN(byte_sum,hdr_len);
+	bin_size = (data_used(data_out) - used_size);  // size after
+	PUT_UINT32(data_out->base+patch_offset, bin_size);
+	break;
     }
-
     default:
 	return -1;
     }
-
-}
-
-/*
- * Ouput a SDP Attribute
- * BINARY SDPAttribute SDPElement 
- */
-void put_sdp_attribute(const void* akey, const void* avalue, void* context)
-{
-    CFNumberRef numKey = (CFNumberRef) akey;
-    CFNumberType numType;
-    Data* data_out = (Data*) context;
-    UInt32 patch_offset;
-    IOBluetoothSDPDataElement* value =(IOBluetoothSDPDataElement*) avalue;
-
-    put_UINT8(data_out, BINARY);
-    patch_offset = (data_out->ptr - data_out->base);  /* keep offset */
-    put_UINT32(data_out, 0);                          /* patch this later */
-    
-    if ((numType=CFNumberGetType(numKey)) == kCFNumberSInt32Type) {
-	UInt16 id;
-	UInt32 bin_size;
-
-	if (CFNumberGetValue(numKey, kCFNumberSInt16Type, &id)) {
-	    put_UINT8(data_out, ((kBluetoothSDPDataElementTypeUnsignedInt << 3) | 1));
-	    put_UINT16(data_out, id);
-	    if ((bin_size = put_sdp_elem(value, data_out)) <= 0) {
-		bin_size = 3;
-		PUT_UINT32(data_out->base+patch_offset, bin_size);
-	    }
-	    else {
-		bin_size += 3;
-		PUT_UINT32(data_out->base+patch_offset, bin_size);
-	    }
-	}
-    }
-    else {
-	DBG("attribute key num type=%d", numType);
-    }
+    return 0;
 }
 
 /*
@@ -805,39 +811,76 @@ void put_sdp_attribute(const void* akey, const void* avalue, void* context)
 void put_sdp_service(IOBluetoothSDPServiceRecord* serv, Data* data_out)
 {
     NSDictionary* dict;
+    NSNumber* key;
 
     put_tag(data_out, LIST);
     dict = [serv attributes];
-    CFDictionaryApplyFunction((CFDictionaryRef)dict, 
-			      put_sdp_attribute, data_out);
+
+    for (key in dict) {
+	UInt16 id;
+	size_t bin_size;
+	size_t used_size;
+	intptr_t patch_offset;
+	uint8_t type;
+	IOBluetoothSDPDataElement* value = [dict objectForKey:key];
+
+	put_UINT8(data_out, BINARY);
+	patch_offset = data_used(data_out);  /* keep offset */
+	put_UINT32(data_out, 0);             /* patch this later */
+    
+	// FIXME: do not assume key is a number?
+	id = key.unsignedShortValue;
+	type=((kBluetoothSDPDataElementTypeUnsignedInt << 3) | 1);
+	put_UINT8(data_out, type);
+	put_UINT16(data_out, id);
+	DEBUGF("  type:%d id=%d avail=%d", type, id, data_avail(data_out));
+	used_size = data_used(data_out); // size before
+	put_sdp_elem(value, data_out, 0);
+	bin_size = 3 + (data_used(data_out) - used_size);  // size after
+	PUT_UINT32(data_out->base+patch_offset, bin_size);
+    }
     put_tag(data_out, LIST_END);
 }
 
-/* if data_in == 0 then all records are returned
+/* read a UUID from data_in
+ * if data_in == 0 then all records are returned
  *    data_in == 2  UUID16 is assumed and searched for
  *    data_in == 4  UUID32 is assumed and searched for
  *    data_in == 16 UUID is assumed and searched
  */
-void bt_sdp_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
+
+int get_uuid(Data* data_in, IOBluetoothSDPUUID** uuid)
 {
-    UInt32  n;
-    IOBluetoothSDPUUID* uuid = NULL;
-    
-    n = data_avail(data_in);
-    if (n == 2) {
+    switch(data_avail(data_in)) {
+    case 2: {
 	BluetoothSDPUUID16 uuid16;
 	get_UInt16(data_in, &uuid16);
-	uuid = [IOBluetoothSDPUUID uuid16:uuid16];
+	*uuid = [IOBluetoothSDPUUID uuid16:uuid16];
+	break;
     }
-    else if (n == 4) {
+    case 4: {
 	BluetoothSDPUUID32 uuid32;
 	get_UInt32(data_in, &uuid32);
-	uuid = [IOBluetoothSDPUUID uuid32:uuid32];
+	*uuid = [IOBluetoothSDPUUID uuid32:uuid32];
+	break;
     }
-    else if (n == 16) {
-	uuid = [IOBluetoothSDPUUID uuidWithBytes:data_in->ptr length:16];
+    case 16: {
+	*uuid = [IOBluetoothSDPUUID uuidWithBytes:data_in->ptr length:16];
+	break;
     }
+    case 0:
+	*uuid = NULL;
+	break;
+    default:
+	return 0;
+    }
+    return 1;
+}
 
+
+void bt_sdp_info(IOBluetoothDevice* device, IOBluetoothSDPUUID* uuid,
+		 Data* data_out)
+{
     if (uuid != NULL) {
 	IOBluetoothSDPServiceRecord* serv =
 	    [device getServiceRecordForUUID:uuid];
@@ -855,10 +898,13 @@ void bt_sdp_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
 	    NSUInteger i, n;
 
 	    n = [services count];
+	    DEBUGF("bt_sdp_info: %lu services found", n);
 	    for (i = 0; i < n; i++) {
 		IOBluetoothSDPServiceRecord* serv = [services objectAtIndex:i];
+		DEBUGF("bt_sdp_info: service %lu %p", i, serv);
 		put_sdp_service(serv, data_out);
 	    }
+	    DEBUGF("bt_sdp_info: %lu services done", n);
 	}
 	put_tag(data_out, LIST_END);
     }
@@ -929,19 +975,19 @@ int bt_dynamic_len(Data* data_in, int sdp_size, CFIndex* length)
 {
     switch(sdp_size) {
     case 5: {
-	u_int8_t len;
+	uint8_t len;
 	if (!get_uint8(data_in, &len)) return 0;
 	*length = (CFIndex) len;
 	return 1;
     }
     case 6: {
-	u_int16_t len;
+	uint16_t len;
 	if (!get_uint16(data_in, &len)) return 0;
 	*length = (CFIndex) len;
 	return 1;
     }
     case 7: {
-	u_int32_t len;
+	uint32_t len;
 	if (!get_uint32(data_in, &len)) return 0;
 	*length = (CFIndex) len;
 	return 1;
@@ -966,7 +1012,7 @@ int bt_fixed_len(int sdp_size, CFIndex* length)
 
 void* bt_get_sdp_value(Data* data_in)
 {
-    u_int8_t  sdp_tag;
+    uint8_t  sdp_tag;
     int  sdp_type;
     int  sdp_size;
 
@@ -983,7 +1029,7 @@ void* bt_get_sdp_value(Data* data_in)
 	void* value;
 	switch(sdp_size) {
 	case 0: {
-	    u_int8_t uval;
+	    uint8_t uval;
 	    int val;
 	    get_uint8(data_in, &uval);
 	    val = uval;
@@ -991,7 +1037,7 @@ void* bt_get_sdp_value(Data* data_in)
 	    return bt_value_dict(sdp_type,1,value); 
 	}
 	case 1: {
-	    u_int16_t uval;
+	    uint16_t uval;
 	    int val;
 	    if (!get_uint16(data_in, &uval)) return NULL;
 	    val = uval;
@@ -999,7 +1045,7 @@ void* bt_get_sdp_value(Data* data_in)
 	    return bt_value_dict(sdp_type,2,value);
 	}
 	case 2: {
-	    u_int32_t uval;
+	    uint32_t uval;
 	    int val;
 	    if (!get_uint32(data_in, &uval)) return NULL;
 	    val = uval;
@@ -1042,7 +1088,7 @@ void* bt_get_sdp_value(Data* data_in)
 	void* value;
 
 	if (!bt_dynamic_len(data_in, sdp_size, &len)) return NULL;
-	value = (void*) CFStringCreateWithBytes(NULL, 
+	value = (void*) CFStringCreateWithBytes(NULL,
 						(const UInt8*) data_in->ptr, 
 						len,
 						/* FIX ME */
@@ -1070,7 +1116,7 @@ void* bt_get_sdp_value(Data* data_in)
     case kBluetoothSDPDataElementTypeDataElementAlternative: {
 	CFMutableArrayRef array;
 	CFIndex len;
-	u_int8_t* end_ptr;
+	uint8_t* end_ptr;
 
 	if (!bt_dynamic_len(data_in, sdp_size, &len)) return NULL;
 
@@ -1096,7 +1142,7 @@ void* bt_get_sdp_value(Data* data_in)
 
 NSDictionary* bt_make_sdp_dict(Data* data_in)
 {
-    u_int8_t tag;
+    uint8_t tag;
     NSMutableDictionary* servDict;
     void* value;
 
@@ -1105,24 +1151,24 @@ NSDictionary* bt_make_sdp_dict(Data* data_in)
     if ((servDict = [[NSMutableDictionary alloc] initWithCapacity:10]) == NULL)
 	return NULL;
     
-    DBG("Service add: found LIST tag", 0);
+    DEBUGF("Service add: found LIST tag", 0);
     
     while(get_uint8(data_in, &tag)) {
 	if (tag == LIST_END) {
-	    DBG("Service add: found LIST_END tag", 0);
+	    DEBUGF("Service add: found LIST_END tag", 0);
 	    return servDict;
 	}
 	else if (tag == BINARY) {
-	    u_int32_t bin_sz;
-	    u_int8_t  sdp_tag;
-	    u_int8_t  sdp_type;
-	    u_int8_t  sdp_size;
-	    u_int16_t attributeID;
+	    uint32_t bin_sz;
+	    uint8_t  sdp_tag;
+	    uint8_t  sdp_type;
+	    uint8_t  sdp_size;
+	    uint16_t attributeID;
 	    NSString* key;
 	    char attr[5];
 
 	    if (!get_uint32(data_in, &bin_sz)) goto error;
-	    DBG("Service add: found BINARY size=%d", bin_sz);
+	    DEBUGF("Service add: found BINARY size=%d", bin_sz);
 	    if (!get_uint8(data_in, &sdp_tag)) goto error;
 	    sdp_type = (sdp_tag >> 3);
 	    sdp_size = sdp_tag & 0x7;
@@ -1132,7 +1178,7 @@ NSDictionary* bt_make_sdp_dict(Data* data_in)
 
 	    /* Generate the attribute ID as Hex String Key 4 digits */
 	    snprintf(attr, 5, "%04X", attributeID);
-	    DBG("Service add: found attribute %s", attr);
+	    DEBUGF("Service add: found attribute %s", attr);
 	    key = [[NSString alloc]initWithBytes:(const void*)attr length:4 encoding:NSASCIIStringEncoding];
 	    value = bt_get_sdp_value(data_in);
 	    [servDict setObject:value forKey:key];
@@ -1295,7 +1341,7 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
     UInt8 buf[64];
     Data data;
 
-    DBG("SCAN: started",0);
+    DEBUGF("SCAN: started",0);
 
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
@@ -1314,7 +1360,7 @@ device:(IOBluetoothDevice*)device
     UInt8 buf[64];
     Data data;
 
-    DBG("SCAN: device found",0);
+    DEBUGF("SCAN: device found",0);
 
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
@@ -1333,7 +1379,7 @@ device:(IOBluetoothDevice*)device
     (void) sender;
     (void) devicesRemaining;
     /* not used - should not be called */
-    DBG("SCAN: %d name started: devicesRemaining=%d", 
+    DEBUGF("SCAN: %d name started: devicesRemaining=%d", 
 	mSubID, devicesRemaining);
 }
 
@@ -1344,7 +1390,7 @@ device:(IOBluetoothDevice*)device
     (void) device;
     (void) devicesRemaining;
     /* not used - should not be called */
-    DBG("SCAN: %d device name updated: deviceRemaining=%d", 
+    DEBUGF("SCAN: %d device name updated: deviceRemaining=%d", 
 	mSubID, devicesRemaining);
 }
 
@@ -1353,7 +1399,7 @@ device:(IOBluetoothDevice*)device
     (void) sender;
     (void) error;
 
-    DBG("SCAN: %d stopped",mSubID);
+    DEBUGF("SCAN: %d stopped",mSubID);
 
     if (!aborted) { /* no need to send event on user abort */
 	UInt8 buf[64];
@@ -1376,9 +1422,16 @@ device:(IOBluetoothDevice*)device
     UInt32 mCmdID;
 }
 - (instancetype)initWithCmdID:(UInt32) cmdid;
+- (void) dealloc;
 @end
 
 @implementation RemoteNameLookup
+
+- (void) dealloc
+{
+    DEBUGF("RemoteNameLookup dealloc");
+    [super dealloc];
+}
 
 - (instancetype)initWithCmdID:(UInt32) cmdid
 {
@@ -1413,33 +1466,41 @@ device:(IOBluetoothDevice*)device
 
 @interface SDPLookup : NSObject <IOBluetoothDeviceInquiryDelegate> {
     UInt32 mCmdID;
+    IOBluetoothSDPUUID* mUUID;
 }
-- (instancetype)initWithCmdID:(UInt32) cmdid;
+- (instancetype)initWithCmdID:(UInt32) cmdid andUUID:(IOBluetoothSDPUUID*)uuid;
+- (void) dealloc;
 @end
 
 @implementation SDPLookup
 
-- (instancetype)initWithCmdID:(UInt32) cmdid
+- (instancetype)initWithCmdID:(UInt32) cmdid andUUID:(IOBluetoothSDPUUID*) uuid
 {
+    DEBUGF("SDPLookup: alloc");
     if (self = [super init]) {
 	mCmdID = cmdid;
+	mUUID = [uuid retain];
     }
     return self;
+}
+
+- (void) dealloc 
+{
+    DEBUGF("SDPLookup: dealloc");
+    [mUUID release];
+    [super dealloc];
 }
 
 - (void)sdpQueryComplete:(IOBluetoothDevice *)device status:(IOReturn)status
 {
     UInt8  out_buf[2048];
-    UInt8  in_buf[16];
-    Data data_in;
     Data data_out;
 
     if (status == kIOReturnSuccess) {
-	data_init(&data_in, in_buf, 0, 0, FALSE); /* dummy */
 	data_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, mCmdID);
-	bt_sdp_info(device, &data_in, &data_out);
+	bt_sdp_info(device, mUUID, &data_out);
 	data_send(&data_out, 1);
 	data_final(&data_out);
     }
@@ -1500,7 +1561,7 @@ device:(IOBluetoothDevice*)device
     Data data;
     (void) rfcommChannel;
 
-    DBG("RFCOMM: Data size=%d", dataLength);
+    DEBUGF("RFCOMM: Data size=%d", dataLength);
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
     put_UINT32(&data, mSubID);
@@ -1516,7 +1577,7 @@ device:(IOBluetoothDevice*)device
 {
     (void) rfcommChannel;
     (void) error;
-    DBG("RFCOMM: OpenComplete error=%d", error);
+    DEBUGF("RFCOMM: OpenComplete error=%d", error);
     bt_ok(mCmdID);
     mCmdID = 0;
 }
@@ -1524,7 +1585,7 @@ device:(IOBluetoothDevice*)device
 - (void)rfcommChannelClosed:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     (void) rfcommChannel;
-    DBG("RFCOMM: Closed", 0);
+    DEBUGF("RFCOMM: Closed", 0);
     if (mCmdID == 0) {
 	UInt8 buf[64];
 	Data data;
@@ -1545,15 +1606,15 @@ device:(IOBluetoothDevice*)device
 - (void)rfcommChannelControlSignalsChanged:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     (void) rfcommChannel;
-    DBG("RFCOMM: ControlSignalsChanged",0);
+    DEBUGF("RFCOMM: ControlSignalsChanged",0);
 }
 
 - (void)rfcommChannelFlowControlChanged:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     if ([rfcommChannel isTransmissionPaused])
-	DBG("RFCOMM: FlowControlChanged OFF", 0);
+	DEBUGF("RFCOMM: FlowControlChanged OFF", 0);
     else
-	DBG("RFCOMM: FlowControlChanged ON", 0);
+	DEBUGF("RFCOMM: FlowControlChanged ON", 0);
 }
 
 - (void)rfcommChannelWriteComplete:(IOBluetoothRFCOMMChannel*)rfcommChannel refcon:(void*)refcon status:(IOReturn)error
@@ -1564,7 +1625,7 @@ device:(IOBluetoothDevice*)device
 
     // FIXME: handle error!
 
-    DBG("RFCOMM: WriteComplete",0);
+    DEBUGF("RFCOMM: WriteComplete",0);
     if ((len=data_avail(out)) == 0) {
 	data_free(out);
 	bt_ok(mCmdID);
@@ -1589,7 +1650,7 @@ device:(IOBluetoothDevice*)device
 {
     (void) rfcommChannel;
     // FIXME: probably a good place to fill output data here ?
-    DBG("RFCOMM: QueueSpaceAvailable",0);
+    DEBUGF("RFCOMM: QueueSpaceAvailable",0);
 }
 
 @end
@@ -1600,13 +1661,13 @@ void rfcomm_accept(Subscription* listen)
     ListenQueue*  lq = (ListenQueue*) listen->opaque;
 
     if (listen->type != RFCOMM_LISTEN) {
-	DBG("RFCOMM: not a listen subscription", 0);
+	DEBUGF("RFCOMM: not a listen subscription", 0);
     }
     else if (lq->qh == lq->qt) {
-	DBG("RFCOMM: listen queue empty", 0);
+	DEBUGF("RFCOMM: listen queue empty", 0);
     }
     else if (listen->wait == listen) {
-	DBG("RFCOMM: listen no waiter", 0);
+	DEBUGF("RFCOMM: listen no waiter", 0);
     }
     else {
 	Subscription* sp = listen->wait;
@@ -1630,7 +1691,7 @@ void rfcomm_accept(Subscription* listen)
 	    err = [channel setDelegate:delegate];
 
 	    if (err != kIOReturnSuccess) {
-		DBG("RFCOMM: accept error %d:", err);
+		DEBUGF("RFCOMM: accept error %d:", err);
 		[channel closeChannel]; //IOBluetoothRFCOMMChannelCloseChannel(channel);
 		// delete delegate?
 	    }
@@ -1642,18 +1703,18 @@ void rfcomm_accept(Subscription* listen)
 		Data data;
 
 		if ((device = [channel getDevice]) == NULL) {
-		    DBG("RFCOMM: accept no device", 0);
+		    DEBUGF("RFCOMM: accept no device", 0);
 		    [channel closeChannel];
 		    continue;
 		}
 		if ((addr = [device getAddress]) == NULL) {
-		    DBG("RFCOMM: accept no address", 0);
+		    DEBUGF("RFCOMM: accept no address", 0);
 		    [channel closeChannel];
 		    continue;
 		}
 		channel_id = [channel getChannelID];
 
-		DBG("RFCOMM: accept on %d", channel_id);
+		DEBUGF("RFCOMM: accept on %d", channel_id);
 
 		/* we only unlink when we got a channel */
 		sp->wait = listen;
@@ -1687,10 +1748,10 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     int qh_next;
     (void) inRef;
 
-    DBG("RFCOMM: notification", 0);
+    DEBUGF("RFCOMM: notification", 0);
     qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
     if (qh_next == lq->qt) {
-	DBG("RFCOMM: listen queue full", 0);
+	DEBUGF("RFCOMM: listen queue full", 0);
 	/* If queue is full possibly delete the oldest/newest ? */
 	return;
     }
@@ -1734,7 +1795,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     Data data;
     (void) l2capChannel;
 
-    DBG("L2CAP: Data size=%d", dataLength);
+    DEBUGF("L2CAP: Data size=%d", dataLength);
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
     put_UINT32(&data, mSubID);
@@ -1750,7 +1811,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 {
     (void) l2capChannel;
     (void) error;  // fixme check this
-    DBG("L2CAP: OpenComplete",0);
+    DEBUGF("L2CAP: OpenComplete",0);
     bt_ok(mCmdID);
     mCmdID = 0;
 }
@@ -1758,7 +1819,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 - (void)l2capChannelClosed:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DBG("L2CAP: Closed this", 0);
+    DEBUGF("L2CAP: Closed this", 0);
     if (mCmdID == 0) {
 	UInt8 buf[64];
 	Data data;
@@ -1780,7 +1841,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 - (void)l2capChannelReconfigured:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DBG("L2CAP: Reconfigured",0);
+    DEBUGF("L2CAP: Reconfigured",0);
 }
 
 - (void)l2capChannelWriteComplete:(IOBluetoothL2CAPChannel*)l2capChannel refcon:(void*)refcon status:(IOReturn)error
@@ -1789,7 +1850,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     UInt32 len;
     (void)error;
 
-    DBG("L2CAP: WriteComplete",0);
+    DEBUGF("L2CAP: WriteComplete",0);
     if ((len=data_avail(out)) == 0) {
 	data_free(out);
 	bt_ok(mCmdID);
@@ -1813,7 +1874,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 - (void)l2capChannelQueueSpaceAvailable:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DBG("L2CAP: QueueSpaceAvailable",0);
+    DEBUGF("L2CAP: QueueSpaceAvailable",0);
 }
 
 @end
@@ -1824,13 +1885,13 @@ void l2cap_accept(Subscription* listen)
     ListenQueue*  lq = (ListenQueue*) listen->opaque;
 
     if (listen->type != L2CAP_LISTEN) {
-	DBG("L2CAP: not a listen subscription", 0);
+	DEBUGF("L2CAP: not a listen subscription", 0);
     }
     else if (lq->qh == lq->qt) {
-	DBG("L2CAP: listen queue empty", 0);
+	DEBUGF("L2CAP: listen queue empty", 0);
     }
     else if (listen->wait == listen) {
-	DBG("L2CAP: listen no waiter", 0);
+	DEBUGF("L2CAP: listen no waiter", 0);
     }
     else {
 	Subscription* sp = listen->wait;
@@ -1856,7 +1917,7 @@ void l2cap_accept(Subscription* listen)
 	    err = [channel setDelegate:delegate];
 
 	    if (err != kIOReturnSuccess) {
-		DBG("L2CAP: accept error %d:", err);
+		DEBUGF("L2CAP: accept error %d:", err);
 		[channel closeChannel];
 	    }
 	    else {
@@ -1867,17 +1928,17 @@ void l2cap_accept(Subscription* listen)
 		Data data;
 		
 		if ((device = [channel device]) == NULL) {
-		    DBG("L2CAP: accept no device", 0);
+		    DEBUGF("L2CAP: accept no device", 0);
 		    [channel closeChannel];
 		    continue;
 		}
 		psm = [channel PSM];
 		if ((addr = [device getAddress]) == NULL) {
-		    DBG("L2CAP: accept no address", 0);
+		    DEBUGF("L2CAP: accept no address", 0);
 		    [channel closeChannel];
 		    continue;
 		}
-		DBG("L2CAP: accept psm=%d", psm);
+		DEBUGF("L2CAP: accept psm=%d", psm);
 
 		/* we only unlink when we got a channel */
 		sp->wait = listen;
@@ -1912,10 +1973,10 @@ void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBl
     int qh_next;
     (void) inRef;
 
-    DBG("L2CAP: notification", 0);
+    DEBUGF("L2CAP: notification", 0);
     qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
     if (qh_next == lq->qt) {
-	DBG("L2CAP: listen queue full", 0);
+	DEBUGF("L2CAP: listen queue full", 0);
 	/* If queue is full possibly delete the oldest/newest ? */
 	return;
     }
@@ -1945,7 +2006,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
     if (!get_UInt32(&data_in, &cmdid))
 	goto badarg;
 
-    DBG("COMMAND %d cmdid=%d", op, cmdid);
+    DEBUGF("COMMAND %d cmdid=%d", op, cmdid);
 
     switch (op) {
     case CMD_PING: {
@@ -1954,6 +2015,14 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	put_string(&data_out, "pong");
 	goto reply;
     }
+
+    case CMD_DEBUG: {  // <<level>>
+	if (!get_int32(&data_in, &debug_level))
+	    goto badarg;
+	put_tag(&data_out, REPLY_OK);
+	put_UINT32(&data_out, cmdid);
+	goto reply;
+    }	
 
     case CMD_PAIRED_DEVICES: {
 	NSArray* devices = [IOBluetoothDevice pairedDevices];
@@ -2164,6 +2233,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_SERVICE_INFO: { /* addr:48 [uuid:16|uuid:32|uuid:128] */
 	BluetoothDeviceAddress bt_addr;
 	IOBluetoothDevice* device;
+	IOBluetoothSDPUUID* uuid;
 	UInt32 n;
 
 	if(!get_address(&data_in, &bt_addr))
@@ -2171,11 +2241,11 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
 	n = data_avail(&data_in);
-	DBG("SERVICE_INFO: avail=%d", n);
-	if ((n == 0) || (n == 2) || (n == 4) || (n == 16)) {
+	DEBUGF("SERVICE_INFO: avail=%d", n);
+	if (get_uuid(&data_in, &uuid)) {
 	    put_tag(&data_out, REPLY_OK);
 	    put_UINT32(&data_out, cmdid);
-	    bt_sdp_info(device, &data_in, &data_out);
+	    bt_sdp_info(device, uuid, &data_out);
 	    goto reply;
 	}
 	goto badarg;
@@ -2184,16 +2254,19 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_SERVICE_QUERY: { /* addr:48 [uuid:16|uuid:32|uuid:128]*/
 	BluetoothDeviceAddress bt_addr;
 	IOBluetoothDevice* device;
+	IOBluetoothSDPUUID* uuid;
 	SDPLookup* delegate;
 
 	if(!get_address(&data_in, &bt_addr))
+	    goto badarg;
+	if(!get_uuid(&data_in, &uuid))
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 	
-	delegate = [[SDPLookup alloc] initWithCmdID:cmdid];
+	delegate = [[SDPLookup alloc] initWithCmdID:cmdid andUUID:uuid];
 	// FIXME: add uuid match
 	bt_error = [device performSDPQuery:delegate];
 	if (bt_error == kIOReturnSuccess)
@@ -2209,7 +2282,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	DBG("SERVICE_CLOSE: id=%d", id);
+	DEBUGF("SERVICE_CLOSE: id=%d", id);
 	if (find_subscription(SDP,id) != NULL) {
 	    remove_subscription(RFCOMM, id);
 	    goto ok;
@@ -2321,7 +2394,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
 
-	DBG("RFCOMM_OPEN; %d channel=%d", id, channel_id);
+	DEBUGF("RFCOMM_OPEN; %d channel=%d", id, channel_id);
 	
 	if ((s = new_subscription(RFCOMM, id, NULL)) == NULL)
 	    goto mem_error;
@@ -2350,14 +2423,14 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	DBG("RFCOMM_CLOSE: id=%d", id);
+	DEBUGF("RFCOMM_CLOSE: id=%d", id);
 	if ((sptr = find_subscription(RFCOMM,id)) != NULL) {
 	    Subscription* s = *sptr;
 
 	    s->cmdid = cmdid;
 	    rfcommChannel = (IOBluetoothRFCOMMChannel*) (s->handle);
 	    if (rfcommChannel != NULL) {
-		DBG("RFCOMM_CLOSE: channel=%p", rfcommChannel);	       
+		DEBUGF("RFCOMM_CLOSE: channel=%p", rfcommChannel);	       
 		bt_error = [rfcommChannel closeChannel];
 		if (bt_error == kIOReturnSuccess)
 		    goto done;
@@ -2449,11 +2522,11 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 
 	if ((sptr = find_subscription(RFCOMM,id)) != NULL) {
-	    DBG("subscription %d already exists", id);
+	    DEBUGF("subscription %d already exists", id);
 	    goto badarg;
 	}
 	if ((sptr = find_subscription(RFCOMM_LISTEN,listen_id)) == NULL) {
-	    DBG("listen subscription %d does not exists", listen_id);
+	    DEBUGF("listen subscription %d does not exists", listen_id);
 	    goto badarg;
 	}
 	listen = *sptr;
@@ -2590,7 +2663,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
 
-	DBG("L2CAP_OPEN; %d psm=%d", id, psm);
+	DEBUGF("L2CAP_OPEN; %d psm=%d", id, psm);
 	
 	if ((s = new_subscription(L2CAP, id, NULL)) == NULL)
 	    goto mem_error;
@@ -2621,14 +2694,14 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	DBG("L2CAP_CLOSE: id=%d", id);
+	DEBUGF("L2CAP_CLOSE: id=%d", id);
 	if ((sptr = find_subscription(L2CAP,id)) != NULL) {
 	    Subscription* s = *sptr;
 
 	    s->cmdid = cmdid;
 	    l2capChannel = (IOBluetoothL2CAPChannel*) (s->handle);
 	    if (l2capChannel != NULL) {
-		DBG("L2CAP_CLOSE: channel=%p", l2capChannel);
+		DEBUGF("L2CAP_CLOSE: channel=%p", l2capChannel);
 		bt_error = [l2capChannel closeChannel];
 		if (bt_error == kIOReturnSuccess)
 		    goto done;
@@ -2751,11 +2824,11 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 
 	if ((sptr = find_subscription(L2CAP,id)) != NULL) {
-	    DBG("subscription %d already exists", id);
+	    DEBUGF("subscription %d already exists", id);
 	    goto badarg;
 	}
 	if ((sptr = find_subscription(L2CAP_LISTEN,listen_id)) == NULL) {
-	    DBG("listen subscription %d does not exists", listen_id);
+	    DEBUGF("listen subscription %d does not exists", listen_id);
 	    goto badarg;
 	}
 	listen = *sptr;
@@ -2885,7 +2958,7 @@ void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address,
     (void) address;
     (void) data;
 
-    DBG("PIPE: callback type=%d", type);
+    DEBUGF("PIPE: callback type=%d", type);
     if (type == kPipeReadCallBack) {
 	int fd = CFSocketGetNative(pipe);
 	int n;
@@ -2897,11 +2970,11 @@ void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address,
 	    if (n == 0)
 		goto closed;
 	    pinfo->pbuf_len += n;
-	    DBG("READ: %d pbuf_len=%d", n, pinfo->pbuf_len);
+	    DEBUGF("READ: %d pbuf_len=%d", n, pinfo->pbuf_len);
 	    if (pinfo->pbuf_len == sizeof(pinfo->pbuf)) {
 		pinfo->len = (pinfo->pbuf[0]<<24) + (pinfo->pbuf[1]<<16) +
 		    (pinfo->pbuf[2]<<8) + pinfo->pbuf[3];
-		DBG("READ: %d packet len=%d", n, pinfo->len);
+		DEBUGF("READ: %d packet len=%d", n, pinfo->len);
 		if (pinfo->len > 0) {
 		    pinfo->remain = pinfo->len;
 		    pinfo->packet = (UInt8*) malloc(pinfo->len);
@@ -2918,9 +2991,9 @@ void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address,
 		goto error;
 	    if (n == 0)
 		goto closed;
-	    DBG("READ: %d packet bytes", n);
+	    DEBUGF("READ: %d packet bytes", n);
 	    pinfo->remain -= n;
-	    DBG("PACKET: remain=%d", pinfo->remain);
+	    DEBUGF("PACKET: remain=%d", pinfo->remain);
 	    pinfo->ptr += n;
 	    if (pinfo->remain == 0) {
 		bt_command(pinfo->packet, pinfo->len);
@@ -2931,15 +3004,15 @@ void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address,
 	    }
 	}
     }
-    DBG("PIPE: callback done",0);
+    DEBUGF("PIPE: callback done",0);
     return;
 
 error:
-    DBG("pipe read error",0);
+    DEBUGF("pipe read error",0);
     exit(1);
 
 closed:
-    DBG("eof clean-up",0);
+    DEBUGF("eof clean-up",0);
     CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
@@ -2973,7 +3046,7 @@ int main(int argc, char** argv)
     CFRunLoopRun();
 
     [pool release];
-    DBG("terminate",0);
+    DEBUGF("terminate",0);
     exit(0);
 }
 

@@ -21,6 +21,7 @@
 
 -module(bt).
 
+-export([start/0]).
 -export([i/0, i/1]).
 -export([s/1, s/2]).
 -export([scan/1, scan/3]).
@@ -29,18 +30,20 @@
 -export([rfcomm_channel/2]).
 -export([decode_service/1]).
 
-
 -import(lists, [foreach/2, map/2]).
 
 -include("../include/bt.hrl").
 -include("../include/uuid.hrl").
 -include("../include/sdp.hrl").
 
+start() ->
+    application:start(bt).
+
 %%
 %% Dump device information
 %%
 i() ->
-    {ok, Devices} = bt_drv:devices(),
+    {ok,Devices} = bt_drv:devices(),
     foreach(fun(A) -> i(A) end, Devices).
 
 i(paired) ->
@@ -205,55 +208,15 @@ decode_service(Attributes) when is_binary(hd(Attributes)) ->
 		{ID, bt_sdp:decode_sdp_value(Value)}
 	end, Attrs).
 
-%%
-%% getaddr(Name) -> {ok,Addr} | {error, Reason}
-%%
-%% Convert address into a bluetooth address
-%% either {A,B,C,D,E,F}
-%%    or  "AA-BB-CC-DD-EE-FF"  (hex)
-%%    or  "Name" in case the name is resolve
-%%
-getaddr(Addr) when ?is_bt_address(Addr) ->
-    {ok, Addr};
-getaddr(Addr) when is_list(Addr) ->
-    case string:tokens(Addr, "-") of
-	[As,Bs,Cs,Ds,Es,Fs] ->
-	    Res = (catch lists:map(fun(Hx) -> erlang:list_to_integer(Hx,16) end,
-				   [As,Bs,Cs,Ds,Es,Fs])),
-	    case Res of
-		{'EXIT',_} ->
-		    getaddr_by_name(Addr);
-		[A,B,C,D,E,F] ->
-		    {ok,{A,B,C,D,E,F}}
-	    end;
-	_ ->
-	    getaddr_by_name(Addr)
-    end;
-getaddr(Addr) when is_list(Addr) ->
-    getaddr_by_name(Addr);
-getaddr(_) ->
-    {error, einval}.
-%%
-%% getaddr_by_name(Name) -> {ok,Addr} | {error, Reason}
-%% Find address by name (may be wastlty improved)
-%%
-getaddr_by_name(Name) ->
-    {ok,Devices} = bt_drv:devices(),
-    getaddr_by_name(Devices, Name).
+getaddr(Name) ->
+    bt_util:getaddr(Name).
 
-getaddr_by_name([A|As], Name) ->
-    case bt_drv:device_info(A, [name]) of
-	{ok,[{name,Name}]} ->
-	    {ok, A};
-	_ ->
-	    getaddr_by_name(As, Name)
-    end;
-getaddr_by_name([], _Name) ->
-    {error, einval}.
+getaddr_by_name(Name) ->
+    bt_util:getaddr_by_name(Name).
 
 %%
 %% Inquiry scan: 
-%%   Note that the Fun can not make meaning full remote calls
+%%   Note that the Fun can not make meaningfull remote calls
 %%   while inquiry is running.
 %% 
 %%
