@@ -859,8 +859,8 @@ handle_call({l2cap_open, Owner, Address, Psm}, From, State) ->
 	    Args = [<< EvtId:32 >>,AddrArg,<<Psm:16>>],
 	    EvtRef = make_ref(),
 	    Mon = erlang:monitor(process, Owner),
-	    SList = [#subscription { ref=EvtRef, 
-				     id=EvtId, 
+	    SList = [#subscription { ref=EvtRef,
+				     id=EvtId,
 				     subscriber=Owner,
 				     monitor=Mon,
 				     tag = l2cap,
@@ -886,14 +886,14 @@ handle_call({l2cap_listen, Owner, Channel}, From, State) ->
 	    Args = [<< EvtId:32 >>,<<Channel:8>>],
 	    EvtRef = make_ref(),
 	    Mon = erlang:monitor(process, Owner),
-	    SList = [#subscription { ref=EvtRef, 
-				     id=EvtId, 
+	    SList = [#subscription { ref=EvtRef,
+				     id=EvtId,
 				     subscriber=Owner,
 				     monitor=Mon,
 				     tag = l2cap_listen,
 				     data = l2cap_listen
 				    } | State#state.subscription],
-	    State1 = bt_command(From, 
+	    State1 = bt_command(From,
 				State#state { evt_id = ?NEXT_ID(EvtId),
 					      subscription = SList
 					     },
@@ -912,8 +912,8 @@ handle_call({l2cap_accept,Owner,Ref,_Timeout}, From, State) ->
 	    Args = [<<EvtId:32, (S#subscription.id):32 >>],
 	    EvtRef = make_ref(),
 	    Mon = erlang:monitor(process, Owner),
-	    SList = [#subscription { ref=EvtRef, 
-				     id=EvtId, 
+	    SList = [#subscription { ref=EvtRef,
+				     id=EvtId,
 				     subscriber=Owner,
 				     monitor=Mon,
 				     tag = l2cap,
@@ -947,7 +947,7 @@ handle_call({l2cap_close, Ref}, From, State) ->
 handle_call({l2cap_send, Ref, Data}, From, State) ->
     case lists:keysearch(Ref,#subscription.ref,State#state.subscription) of    
 	{value,S} when S#subscription.tag == l2cap ->
-	    State1 = bt_command(From, 
+	    State1 = bt_command(From,
 				State,
 				?CMD_L2CAP_SEND,
 				State#state.cmd_id,
@@ -971,7 +971,7 @@ handle_call({l2cap_psm, Ref}, From, State) ->
 handle_call({l2cap_mtu, Ref}, From, State) ->
     case lists:keysearch(Ref,#subscription.ref,State#state.subscription) of    
 	{value,S} when S#subscription.tag == l2cap ->
-	    State1 = bt_command(From, 
+	    State1 = bt_command(From,
 				State,
 				?CMD_L2CAP_MTU,
 				State#state.cmd_id,
@@ -1051,8 +1051,7 @@ handle_info({Port,{data,Data}},State) when Port == State#state.bt_port ->
 			{value, Decoded} ->
 			    S#subscription.subscriber !
 				{S#subscription.tag,S#subscription.ref,Decoded},
-			    if Decoded == closed;
-			       Decoded == stopped ->
+			    if Decoded == closed ->
 				    unmon(S#subscription.monitor),
 				    SList = State#state.subscription -- [S],
 				    State1 = State#state { subscription = SList },

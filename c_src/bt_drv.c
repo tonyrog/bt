@@ -94,50 +94,139 @@
 #define ADDR           100  /* bluetooth address 6 bytes */
 #define DATE           101  /* uint32 seconds since 1970 unix-time */
 
-typedef enum { SDP, 
-	       INQUIRY, 
-	       RFCOMM, 
-	       RFCOMM_LISTEN,
-	       L2CAP,
-	       L2CAP_LISTEN
-} SubscriptionType;
+typedef enum { 
+    INQUIRY,
+    REMOTE_NAME,
+    CONNECT,
+    SDP_QUERY,
+    SDP,
+    RFCOMM,
+    RFCOMM_LISTEN,
+    L2CAP,
+    L2CAP_LISTEN
+} subscription_type_t;
+
+//  Object structure
+// +----------+-------------------------------------------v
+// |          |     +----------+     +----------+     +----------+
+// | ctx.list | <-> | sub_link | <-> | sub_link | <-> | sub_link |
+// +----------+     +----+-----+     +-----+----+     +----------+
+//                       |                 |
+//                  +----v-------+   +-----v------+
+//                  | subscriber1|   | subscriber2|
+//                  |   INQUIRY  |   |   RFCOMM   |
+//                  +----+-------+   +-------+----+
+//                       | handle            | handle
+//      +----------------v---------+   +-----v--------------------+
+//      | IOBluetoothDeviceInquiry |   | IOBluetoothRFCOMMChannel |
+//      +-------+------------------+   +-----+--------------------+
+//              |                            |
+//      +-------v---------+            +-----v--------------------+
+//      | InquiryDelegate |            | RFCOMMChannelDelegate    |
+//      +-------+---------+            +----------+---------------+
+//              |                                 |
+//              v                                 v
+//            subscriber1 !                   subscriber2 ! 
+//
+typedef struct _subscription_t
+{
+    uint32_t              ref;       // ref count
+    subscription_type_t   type;      // type of subscription
+    uint32_t              id;        // subscription id
+    uint32_t              cmdid;     // current async cmdid (if any)
+    void*                 handle;    // Bluetooth object handle
+    void*                 opaque;    // subscription data
+    struct _subscription_t* accept;  // if on accept list
+} subscription_t;
+
+typedef struct _subscription_link_t
+{
+    struct _subscription_list_t* list;
+    struct _subscription_link_t* next;
+    struct _subscription_link_t* prev;
+    subscription_t* s;
+} subscription_link_t;
+
+typedef struct _subscription_list_t
+{
+    subscription_link_t* first;
+    subscription_link_t* last;
+    size_t length;
+} subscription_list_t;
+
+#define alloc_type(type) calloc(1, sizeof(type))
+
+typedef struct _bt_ctx_t
+{
+    size_t  pbuf_len;        // number of bytes in pbuf
+    uint8_t pbuf[4];         // packet length bytes
+    const uint8_t* ptr;       // data ptr
+    size_t len;             // length of data
+    size_t remain;          // remaining bytes to read
+    uint8_t* packet;          // the data packet being built
+    subscription_list_t list;
+} bt_ctx_t;
+
 
 #define LISTEN_QUEUE_LENGTH 8  /* max connections can only be 7 ? */
 
 typedef struct {
+    bt_ctx_t* ctx;  // access to subscription list
     int qh;
     int qt;
     IOBluetoothObjectRef qelem[LISTEN_QUEUE_LENGTH];
-} ListenQueue;
+    subscription_list_t wait;
+} listen_queue_t;
 
 
-typedef struct _subscription
-{
-    struct _subscription* next;   /* next on subscription list */
-    struct _subscription* wait;   /* next on wait list */
-    SubscriptionType      type;
-    UInt32                id;      /* subscription id */
-    UInt32                cmdid;   /* current async cmdid (if any) */
-    void*                 handle;  /* Bluetooth object handle */
-    void*                 opaque;  /* subscription data */
-} Subscription;
+// -----------------------------------------------------------------------
+//   Delgate classes
+// -----------------------------------------------------------------------
 
+@interface InquiryDelegate : NSObject <IOBluetoothDeviceInquiryDelegate> {
+    subscription_t* mSub;
+}
+- (instancetype)initWithSub:(subscription_t*)s;
+- (void) dealloc;
+@end
 
-typedef struct _main_data
-{
-    size_t pbuf_len;     /* number of bytes in pbuf */
-    UInt8  pbuf[4];      /* packet length bytes */
-    const UInt8* ptr;    /* data ptr */
-    UInt32 len;          /* length of data */
-    UInt32 remain;       /* remaining bytes to read */
-    UInt8* packet;       /* the data packet being built */
-    Subscription* first; /* Event subscription list */
-} MainData;
+@interface RemoteNameDelegate : NSObject <IOBluetoothDeviceInquiryDelegate> {
+    subscription_t* mSub;
+}
+- (instancetype)initWithSub:(subscription_t*) s;
+- (void) dealloc;
+@end
 
-MainData main_info = { 0, {0,0,0,0}, NULL, 0, 0, NULL, NULL };
+@interface ConnectDelegate : NSObject <IOBluetoothDeviceInquiryDelegate> {
+    subscription_t* mSub;
+}
+- (instancetype)initWithSub:(subscription_t*) s;
+- (void) dealloc;
+@end
 
-PipeContext in_ctx = { 0, &main_info, NULL, NULL, NULL };
-PipeContext out_ctx = { 0, &main_info, NULL, NULL, NULL };
+@interface SDPQueryDelegate : NSObject <IOBluetoothDeviceInquiryDelegate> {
+    subscription_t* mSub;
+    IOBluetoothSDPUUID* mUUID;
+}
+- (instancetype)initWithSub:(subscription_t*) s andUUID:(IOBluetoothSDPUUID*)uuid;
+- (void) dealloc;
+@end
+
+@interface RFCOMMChannelDelegate : NSObject <IOBluetoothRFCOMMChannelDelegate> {
+    subscription_t* mSub;
+    bt_ctx_t* mCtx;
+}
+- (instancetype)initWithSub:(subscription_t*) s andCtx:(bt_ctx_t*) ctx;
+- (void) dealloc;
+@end
+
+@interface L2CAPChannelDelegate : NSObject <IOBluetoothL2CAPChannelDelegate> {
+    subscription_t* mSub;
+    bt_ctx_t* mCtx;
+}
+- (instancetype)initWithSub:(subscription_t*) s andCtx:(bt_ctx_t*) ctx;
+- (void) dealloc;
+@end
 
 
 #define DLOG_DEBUG     7
@@ -223,71 +312,172 @@ static inline void put_addr(Data* data, const BluetoothDeviceAddress* addr)
     memcpy(ptr, addr, sizeof(BluetoothDeviceAddress));
 }
 
-static inline Boolean get_address(Data* data, BluetoothDeviceAddress* val)
+static inline int get_address(Data* data, BluetoothDeviceAddress* val)
 {
     if (data_avail(data) >= sizeof(BluetoothDeviceAddress)) {
 	memcpy(val, data->ptr, 	sizeof(BluetoothDeviceAddress));
 	data->ptr += sizeof(BluetoothDeviceAddress);
-	return TRUE;
+	return 1;
     }
-    return FALSE;
+    return 0;
 }
 
-static Subscription* new_subscription(SubscriptionType type, UInt32 id, void* handle)
+static char* format_subscription_type(subscription_type_t type)
 {
-    Subscription* s = malloc(sizeof(Subscription));
-    s->next = NULL;
-    s->wait = NULL;
+    switch(type) {
+    case INQUIRY: return "INQUIRY";
+    case REMOTE_NAME: return "REMOTE_NAME";
+    case CONNECT: return "CONNECT";
+    case SDP_QUERY: return "SPD_QUERY";
+    case SDP: return "SDP";
+    case RFCOMM: return "RFCOMM";
+    case RFCOMM_LISTEN: return "RFCOMM_LISTEN";
+    case L2CAP: return "LPCAP";
+    case L2CAP_LISTEN: return "LPCAP_LISTEN";
+    }
+}
+
+char* format_subscription(subscription_t* s)
+{
+    static char format_buf[128];
+
+    snprintf(format_buf, sizeof(format_buf), 
+	     "%s id=%u,handle=%p ref=%u", 
+	     format_subscription_type(s->type),
+	     s->id, s->handle, s->ref);
+    return format_buf;
+}
+
+
+static subscription_t* new_subscription(subscription_type_t type,
+					uint32_t id, uint32_t cmdid,
+					void* handle)
+{
+    subscription_t* s = alloc_type(subscription_t);
     s->type = type;
     s->id = id;
+    s->cmdid = cmdid;
     s->handle = handle;
     s->opaque = NULL;
+    s->ref = 0;
+    s->accept = NULL;
     return s;
 }
 
-static void free_subscription(Subscription* s)
+#if 0
+static subscription_list_t* new_subscription_list()
 {
-    if ((s->wait != NULL) && (s->wait != s))
-	DEBUGF("WARNING: subscription is still waiting in free", 0);
+    subscription_list_t* list = alloc_type(subscription_list_t);
+    return list;
+}
+#endif
+
+
+static subscription_t* retain_subscription(subscription_t* s)
+{
+    if (s == NULL) {
+	DEBUGF("retain_subscription: NULL");
+    }
+    else {
+	DEBUGF("retain_subscription: %s", format_subscription(s));
+	s->ref++;
+    }
+    return s;
+}
+
+static subscription_link_t* new_subscription_link(subscription_list_t* list,
+						  subscription_t* s)
+{
+    subscription_link_t* link = alloc_type(subscription_link_t);
+    if (link) {
+	link->list = list;
+	link->s    = retain_subscription(s);
+    }
+    return link;
+}
+
+static void free_subscription(subscription_t* s)
+{
+    DEBUGF("free_subscription: %s", format_subscription(s));
     if (s->handle != NULL) {
 	switch(s->type) {
+	case INQUIRY: {
+	    IOBluetoothDeviceInquiry* obj = s->handle;
+	    if (obj) {
+		InquiryDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
+	    break;
+	}
+
+	case REMOTE_NAME: {
+	    IOBluetoothDeviceInquiry* obj = s->handle;
+	    if (obj) {
+		RemoteNameDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
+	    break;
+	}
+
+	case CONNECT: {
+	    IOBluetoothDeviceInquiry* obj = s->handle;
+	    if (obj) {
+		ConnectDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
+	    break;
+	}
+
+	case SDP_QUERY: {
+	    IOBluetoothDeviceInquiry* obj = s->handle;
+	    if (obj) {
+		SDPQueryDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
+	    break;
+	}
+
 	case SDP: {
-	    IOBluetoothSDPServiceRecord* serviceRecord = 
-		(IOBluetoothSDPServiceRecord*)s->handle;
+	    IOBluetoothSDPServiceRecord* serviceRecord = s->handle;
 	    [serviceRecord removeServiceRecord];
 	    [serviceRecord release];
 	    break;
 	}
-	case INQUIRY: {
-	    IOBluetoothDeviceInquiry* obj = 
-		(IOBluetoothDeviceInquiry*)s->handle;
-	    [obj release];
-	    break;
-	}
 	case RFCOMM: {
-	    IOBluetoothRFCOMMChannel* obj =
-		(IOBluetoothRFCOMMChannel*)s->handle;
-	    [obj release];
+	    IOBluetoothRFCOMMChannel* obj = s->handle;
+	    if (obj) {
+		RFCOMMChannelDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
 	    break;
 	}
 	case RFCOMM_LISTEN: {
-	    IOBluetoothUserNotification* obj = 
-		(IOBluetoothUserNotification*)s->handle;
-	    [obj unregister];
-	    // release?
-	    break;
-	}
-	case L2CAP: {
-	    IOBluetoothL2CAPChannel* obj = 
-		(IOBluetoothL2CAPChannel*)s->handle;
+	    IOBluetoothUserNotification* obj = s->handle;
+	    if (obj)
+		[obj unregister];
+	    // check all acceptors here?
 	    [obj release];
 	    break;
 	}
+	case L2CAP: {
+	    IOBluetoothL2CAPChannel* obj = s->handle;
+	    if (obj) {
+		L2CAPChannelDelegate* delegate = [obj delegate];
+		[delegate release];
+		[obj release];
+	    }
+	    break;
+	}
 	case L2CAP_LISTEN: {
-	    IOBluetoothUserNotification* obj = 
-		(IOBluetoothUserNotification*)s->handle;
-	    [obj unregister];
-	    // release?
+	    IOBluetoothUserNotification* obj = s->handle;
+	    if (obj)
+		[obj unregister];
+	    [obj release];
 	    break;
 	}
 	default:  // warn?
@@ -299,65 +489,158 @@ static void free_subscription(Subscription* s)
     free(s);
 }
 
-static Subscription* insert_subscription(Subscription* s)
+static subscription_t* release_subscription(subscription_t* s)
 {
-    s->next = main_info.first;
-    main_info.first = s;
-    return s;
+    DEBUGF("release_subscription: %s", format_subscription(s));
+    if (s->ref <= 1) {
+	free_subscription(s);
+	return NULL;
+    }
+    else  {
+	s->ref--;
+	return s;
+    }
 }
 
-static Subscription** find_subscription(SubscriptionType type, UInt32 id)
+#if 0
+static subscription_link_t* insert_after_link(subscription_link_t* link,
+					      subscription_link_t* after_link)
 {
-    Subscription** sptr = &main_info.first;
-    Subscription* s;
+    subscription_list_t* list = after_link->list;
+    link->next = after_link->next;
+    link->prev = after_link;
+    link->list = list;
+    after_link->next = link;
+    if (link->next == NULL)
+        list->last = link;
+    else
+        link->next->prev = link;
+    list->length++;
+    return link;
+}
+#endif
 
-    while((s = *sptr)) {
-	if ((s->id == id) && (s->type == type))
-	    return sptr;
-	sptr = &s->next;
+#if 0
+static subscription_link_t* insert_before_link(subscription_link_t* link,
+					       subscription_link_t* before_link)
+{
+    if (before_link->prev != NULL)
+        return insert_after_link(link, before_link->prev);
+    else {
+	subscription_list_t* list = before_link->list;
+        link->next = before_link;
+	link->list = list;
+        before_link->prev = link;
+        list->first = link;
+	list->length++;
+    }
+    return link;
+}
+#endif
+
+#if 0
+static void insert_link_first(subscription_link_t* link)
+{
+    if (link != NULL) {
+	subscription_list_t* list = link->list;
+	link->next = list->first;
+	link->prev = NULL;
+	if (list->first != NULL)
+	    list->first->prev = link;
+	else
+	    list->last = link;
+	list->first = link;
+	list->length++;
+	return 0;
+    }
+    return -1;
+}
+
+static int insert_first(subscription_list_t* list, subscription_t* s)
+{
+    subscription_link_t* link = new_subscription_link(list,s);
+    return insert_link_first(link);
+}
+#endif
+
+static int insert_link_last(subscription_link_t* link)
+{
+    if (link != NULL) {
+	subscription_list_t* list = link->list;
+	link->next = NULL;
+	link->prev = list->last;
+	if (list->last)
+	    list->last->next = link;
+	else
+	    list->first = link;
+	list->last = link;
+	list->length++;
+	return 0;
+    }
+    return -1;
+}
+
+
+static int insert_last(subscription_list_t* list, subscription_t*s)
+{
+    subscription_link_t* link = new_subscription_link(list,s);
+    return insert_link_last(link);
+}
+
+static subscription_link_t* find_subscription_link(subscription_list_t* list,
+						   subscription_type_t type, 
+						   uint32_t id)
+{
+    subscription_link_t* p = list->first;
+    DEBUGF("find_subscription_link: %s id=%u",
+	   format_subscription_type(type), id);
+    while(p) {
+	if ((p->s->id == id) && (p->s->type == type))
+	    return p;
+	p = p->next;
     }
     return NULL;
 }
 
-static Boolean remove_subscription(SubscriptionType type, UInt32 id)
+static subscription_t* find_subscription(subscription_list_t* list,
+					 subscription_type_t type, 
+					 uint32_t id)
 {
-    Subscription** sptr;
-    Subscription* s;
+    subscription_link_t* p = find_subscription_link(list, type, id);
+    if (p != NULL)
+	return p->s;
+    return NULL;
+}
 
-    if ((sptr = find_subscription(type, id)) != NULL) {
-	s = *sptr;
-	*sptr = s->next;
-	free_subscription(s);
-	return TRUE;
+static void unlink_subscription(subscription_link_t* link)
+{
+    subscription_list_t* list = link->list;
+    DEBUGF("unlink_subscription: %s", format_subscription(link->s));
+    if (link->prev != NULL)
+	link->prev->next = link->next;
+    else
+	list->first = link->next;
+
+    if (link->next != NULL)
+	link->next->prev = link->prev;
+    else
+	list->last = link->prev;
+    list->length--;
+    release_subscription(link->s);
+    free(link);
+}
+
+static int remove_subscription(subscription_list_t* list,
+			       subscription_type_t type, uint32 id)
+{
+    subscription_link_t* link;
+
+    if ((link = find_subscription_link(list, type, id)) != NULL) {
+	unlink_subscription(link);
+	return 1;
     }
-    return FALSE;
+    return 0;
 }
-
-#if 0
-static Subscription* add_subscription(SubscriptionType type, UInt32 id, void* data)
-{
-    Subscription* s = new_subscription(type, id, data);
-    if (s == NULL)
-	return NULL;
-    return insert_subscription(s);
-}
-#endif
-
-/* unlink subscription from wait queue */
-void unlink_subscription(Subscription* s)
-{
-    Subscription* sp = s->wait;
-
-    if ((sp == NULL) || (sp->wait == sp))
-	return; /* either not onl queue or a listen subscription */
-
-    /* loop until found, FIXME: add max loop */
-    while(sp->wait != s) 
-	sp = sp->wait;
-    sp->wait = s->wait;
-    s->wait = NULL;
-}
-
 
 
 #define ERR_SHORT 1
@@ -1318,21 +1601,24 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
 
 }
 
-@interface InquiryDelegate : NSObject <IOBluetoothDeviceInquiryDelegate> {
-    UInt32 mSubID;
-}
-- (instancetype)initWithSubID:(UInt32)subID;
-
-@end
+// -----------------------------------------------------------------------
+//   InquiryDelegate
+// -----------------------------------------------------------------------
 
 @implementation InquiryDelegate
 
-- (instancetype)initWithSubID:(UInt32)subID
+- (instancetype)initWithSub:(subscription_t*)s
 {
     if (self = [super init]) {
-	mSubID = subID;
+	mSub = s; // weak!
     }
     return self;
+}
+
+- (void) dealloc
+{
+    DEBUGF("InquiryDelegate: dealloc");
+    [super dealloc];
 }
 
 - (void) deviceInquiryStarted:(IOBluetoothDeviceInquiry*)sender
@@ -1341,11 +1627,11 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
     UInt8 buf[64];
     Data data;
 
-    DEBUGF("SCAN: started",0);
+    DEBUGF("InquiryDelegate: started");
 
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSubID);
+    put_UINT32(&data, mSub->id);
     put_atom(&data, "started");
 
     data_send(&data, 1);
@@ -1360,11 +1646,11 @@ device:(IOBluetoothDevice*)device
     UInt8 buf[64];
     Data data;
 
-    DEBUGF("SCAN: device found",0);
+    DEBUGF("InquiryDelegate: device found");
 
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSubID);
+    put_UINT32(&data, mSub->id);
     put_tag(&data, TUPLE);
     put_atom(&data, "device");
     put_addr(&data, bt_addr);
@@ -1378,9 +1664,9 @@ device:(IOBluetoothDevice*)device
 {
     (void) sender;
     (void) devicesRemaining;
-    /* not used - should not be called */
-    DEBUGF("SCAN: %d name started: devicesRemaining=%d", 
-	mSubID, devicesRemaining);
+
+    DEBUGF("InquiryDelegate: %d name started: devicesRemaining=%d",
+	   mSub->id, devicesRemaining);
 }
 
 
@@ -1389,9 +1675,9 @@ device:(IOBluetoothDevice*)device
     (void) sender;
     (void) device;
     (void) devicesRemaining;
-    /* not used - should not be called */
-    DEBUGF("SCAN: %d device name updated: deviceRemaining=%d", 
-	mSubID, devicesRemaining);
+
+    DEBUGF("InquiryDelegate: %d device name updated: deviceRemaining=%d",
+	   mSub->id, devicesRemaining);
 }
 
 - (void) deviceInquiryComplete:(IOBluetoothDeviceInquiry*)sender error:(IOReturn)error aborted:(BOOL)aborted
@@ -1399,7 +1685,7 @@ device:(IOBluetoothDevice*)device
     (void) sender;
     (void) error;
 
-    DEBUGF("SCAN: %d stopped",mSubID);
+    DEBUGF("InquiryDelegate: %d stopped",mSub->id);
 
     if (!aborted) { /* no need to send event on user abort */
 	UInt8 buf[64];
@@ -1407,43 +1693,37 @@ device:(IOBluetoothDevice*)device
 
 	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSubID);
+	put_UINT32(&data, mSub->id);
 	put_atom(&data, "stopped");
 	data_send(&data, 1);
 	data_final(&data);
     }
-    remove_subscription(INQUIRY,mSubID);
 }
 
 @end
 
+// -----------------------------------------------------------------------
+//   RemoteNameDelegate
+// -----------------------------------------------------------------------
 
-@interface RemoteNameLookup : NSObject <IOBluetoothDeviceInquiryDelegate> {
-    UInt32 mCmdID;
-}
-- (instancetype)initWithCmdID:(UInt32) cmdid;
-- (void) dealloc;
-@end
+@implementation RemoteNameDelegate
 
-@implementation RemoteNameLookup
-
-- (void) dealloc
-{
-    DEBUGF("RemoteNameLookup dealloc");
-    [super dealloc];
-}
-
-- (instancetype)initWithCmdID:(UInt32) cmdid
+- (instancetype)initWithSub:(subscription_t*) s
 {
     if (self = [super init]) {
-	mCmdID = cmdid;
+	mSub = s; // weak
     }
     return self;
 }
 
+- (void) dealloc
+{
+    DEBUGF("RemoteNameDelegate dealloc");
+    [super dealloc];
+}
+
 - (void)remoteNameRequestComplete:(IOBluetoothDevice *)device status:(IOReturn)status
 {
-
     if (status == kIOReturnSuccess) {
 	UInt8 buf[265];
 	Data data;
@@ -1452,33 +1732,30 @@ device:(IOBluetoothDevice*)device
 	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 	
 	put_tag(&data, REPLY_OK);
-	put_UINT32(&data, mCmdID);
+	put_UINT32(&data, mSub->cmdid);
 	put_ns_string(&data, name);
 	data_send(&data, 1);
 	data_final(&data);
     }
     else
-	bt_error(mCmdID, status);
+	bt_error(mSub->cmdid, status);
+    // only for Inquiry objects
+    release_subscription(mSub);
 }
 
 @end
 
+// -----------------------------------------------------------------------
+//   SDPQueryDelegate
+// -----------------------------------------------------------------------
 
-@interface SDPLookup : NSObject <IOBluetoothDeviceInquiryDelegate> {
-    UInt32 mCmdID;
-    IOBluetoothSDPUUID* mUUID;
-}
-- (instancetype)initWithCmdID:(UInt32) cmdid andUUID:(IOBluetoothSDPUUID*)uuid;
-- (void) dealloc;
-@end
+@implementation SDPQueryDelegate
 
-@implementation SDPLookup
-
-- (instancetype)initWithCmdID:(UInt32) cmdid andUUID:(IOBluetoothSDPUUID*) uuid
+- (instancetype)initWithSub:(subscription_t*) s andUUID:(IOBluetoothSDPUUID*) uuid
 {
-    DEBUGF("SDPLookup: alloc");
+    DEBUGF("SDPQueryDelegate: alloc");
     if (self = [super init]) {
-	mCmdID = cmdid;
+	mSub = s; // weak
 	mUUID = [uuid retain];
     }
     return self;
@@ -1486,7 +1763,7 @@ device:(IOBluetoothDevice*)device
 
 - (void) dealloc 
 {
-    DEBUGF("SDPLookup: dealloc");
+    DEBUGF("SDPQueryDelegate: dealloc");
     [mUUID release];
     [super dealloc];
 }
@@ -1499,60 +1776,69 @@ device:(IOBluetoothDevice*)device
     if (status == kIOReturnSuccess) {
 	data_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
 	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, mCmdID);
+	put_UINT32(&data_out, mSub->cmdid);
 	bt_sdp_info(device, mUUID, &data_out);
 	data_send(&data_out, 1);
 	data_final(&data_out);
     }
     else
-	bt_error(mCmdID, status);
+	bt_error(mSub->cmdid, status);
+    // only for Inquiry objects
+    release_subscription(mSub);
 }
 @end
 
-@interface ConnectCallback : NSObject <IOBluetoothDeviceInquiryDelegate> {
-    UInt32 mCmdID;
-}
-- (instancetype)initWithCmdID:(UInt32) cmdid;
-@end
+// -----------------------------------------------------------------------
+//   Connectelegate
+// -----------------------------------------------------------------------
 
-@implementation ConnectCallback
+@implementation ConnectDelegate
 
-- (instancetype)initWithCmdID:(UInt32) cmdid
+- (instancetype)initWithSub:(subscription_t*) s
 {
     if (self = [super init]) {
-	mCmdID = cmdid;
+	mSub = s; // weak
     }
     return self;
 }
+
+- (void) dealloc 
+{
+    DEBUGF("Connectelegate: dealloc");
+    [super dealloc];
+}
+
 
 - (void)connectionComplete:(IOBluetoothDevice *)device status:(IOReturn)status
 {
     (void) device;
     if (status == kIOReturnSuccess)
-	bt_ok(mCmdID);
+	bt_ok(mSub->cmdid);
     else
-	bt_error(mCmdID, status);
+	bt_error(mSub->cmdid, status);
+    release_subscription(mSub);
 }
 @end
 
-
-// RFCOMM delegate
-@interface RFCOMMChannelDelegate : NSObject <IOBluetoothRFCOMMChannelDelegate> {
-    UInt32 mSubID;
-    UInt32 mCmdID;
-}
-- (instancetype)initWithCmdID:(UInt32) cmdid andSubID:(UInt32) subid;
-@end
+// -----------------------------------------------------------------------
+//   RFCOMMChannelDelegate
+// -----------------------------------------------------------------------
 
 @implementation RFCOMMChannelDelegate
 
-- (instancetype)initWithCmdID:(UInt32) cmdid andSubID:(UInt32) subid
+- (instancetype)initWithSub:(subscription_t*) s andCtx:(bt_ctx_t*) ctx
 {
     if (self = [super init]) {
-	mCmdID = cmdid;
-	mSubID = subid;
+	mSub = s; // weak
+	mCtx = ctx;
     }
     return self;
+}
+
+- (void) dealloc
+{
+    DEBUGF("RFCOMMChannelDelegate: dealloc");
+    [super dealloc];
 }
 
 - (void)rfcommChannelData:(IOBluetoothRFCOMMChannel*)rfcommChannel data:(void *)dataPointer length:(size_t)dataLength
@@ -1561,10 +1847,10 @@ device:(IOBluetoothDevice*)device
     Data data;
     (void) rfcommChannel;
 
-    DEBUGF("RFCOMM: Data size=%d", dataLength);
+    DEBUGF("RFCOMMChannelDelegate: Data size=%d", dataLength);
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSubID);
+    put_UINT32(&data, mSub->id);
     put_tag(&data, TUPLE);
     put_atom(&data, "data");
     put_binary(&data, dataPointer, dataLength);
@@ -1577,44 +1863,44 @@ device:(IOBluetoothDevice*)device
 {
     (void) rfcommChannel;
     (void) error;
-    DEBUGF("RFCOMM: OpenComplete error=%d", error);
-    bt_ok(mCmdID);
-    mCmdID = 0;
+    DEBUGF("RFCOMMChannelDelegate: OpenComplete error=%d", error);
+    bt_ok(mSub->cmdid);
+    mSub->cmdid = 0;
 }
 
 - (void)rfcommChannelClosed:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     (void) rfcommChannel;
-    DEBUGF("RFCOMM: Closed", 0);
-    if (mCmdID == 0) {
+    DEBUGF("RFCOMMChannelDelegate: Closed");
+    if (mSub->cmdid == 0) {
 	UInt8 buf[64];
 	Data data;
 	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSubID);
+	put_UINT32(&data, mSub->id);
 	put_atom(&data, "closed");
 	data_send(&data, 1);
 	data_final(&data);
-	remove_subscription(RFCOMM, mSubID);
     }
     else {
-	bt_ok(mCmdID);
-	remove_subscription(RFCOMM, mSubID);		
+	bt_ok(mSub->cmdid);
+	mSub->cmdid = 0;
     }
+    remove_subscription(&mCtx->list,RFCOMM,mSub->id);
 }
 
 - (void)rfcommChannelControlSignalsChanged:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     (void) rfcommChannel;
-    DEBUGF("RFCOMM: ControlSignalsChanged",0);
+    DEBUGF("RFCOMMChannelDelegate: ControlSignalsChanged");
 }
 
 - (void)rfcommChannelFlowControlChanged:(IOBluetoothRFCOMMChannel*)rfcommChannel
 {
     if ([rfcommChannel isTransmissionPaused])
-	DEBUGF("RFCOMM: FlowControlChanged OFF", 0);
+	DEBUGF("RFCOMMChannelDelegate: FlowControlChanged OFF");
     else
-	DEBUGF("RFCOMM: FlowControlChanged ON", 0);
+	DEBUGF("RFCOMMChannelDelegate: FlowControlChanged ON");
 }
 
 - (void)rfcommChannelWriteComplete:(IOBluetoothRFCOMMChannel*)rfcommChannel refcon:(void*)refcon status:(IOReturn)error
@@ -1625,11 +1911,11 @@ device:(IOBluetoothDevice*)device
 
     // FIXME: handle error!
 
-    DEBUGF("RFCOMM: WriteComplete",0);
+    DEBUGF("RFCOMMChannelDelegate: WriteComplete");
     if ((len=data_avail(out)) == 0) {
 	data_free(out);
-	bt_ok(mCmdID);
-	mCmdID = 0;
+	bt_ok(mSub->cmdid);
+	mSub->cmdid = 0;
     }
     else {
 	BluetoothRFCOMMMTU mtu = [rfcommChannel getMTU];
@@ -1639,8 +1925,8 @@ device:(IOBluetoothDevice*)device
 	data_forward(out, len); /* move to next block */
 	err = [rfcommChannel writeAsync:ptr length:len refcon:out];
 	if (err != kIOReturnSuccess) {
-	    bt_error(mCmdID, err);
-	    mCmdID = 0;
+	    bt_error(mSub->cmdid, err);
+	    mSub->cmdid = 0;
 	    data_free(out);
 	}
     }
@@ -1650,143 +1936,30 @@ device:(IOBluetoothDevice*)device
 {
     (void) rfcommChannel;
     // FIXME: probably a good place to fill output data here ?
-    DEBUGF("RFCOMM: QueueSpaceAvailable",0);
+    DEBUGF("RFCOMMChannelDelegate: QueueSpaceAvailable");
 }
 
 @end
 
-/* check if we have a listner setup channel event listner */
-void rfcomm_accept(Subscription* listen)
-{
-    ListenQueue*  lq = (ListenQueue*) listen->opaque;
-
-    if (listen->type != RFCOMM_LISTEN) {
-	DEBUGF("RFCOMM: not a listen subscription", 0);
-    }
-    else if (lq->qh == lq->qt) {
-	DEBUGF("RFCOMM: listen queue empty", 0);
-    }
-    else if (listen->wait == listen) {
-	DEBUGF("RFCOMM: listen no waiter", 0);
-    }
-    else {
-	Subscription* sp = listen->wait;
-	Subscription* s;
-	/* find the last acceptor (last in list) and unlink */	
-	while(sp->wait->wait != listen)
-	    sp = sp->wait;
-	s = sp->wait;
-
-	/* loop until we find a working channel */
-	while (lq->qh != lq->qt) {
-	    RFCOMMChannelDelegate* delegate;
-	    IOBluetoothRFCOMMChannel* channel = 
-		(IOBluetoothRFCOMMChannel*) lq->qelem[lq->qt];
-	    IOReturn err;
-
-	    lq->qelem[lq->qt] = NULL;
-	    lq->qt = (lq->qt+1) % LISTEN_QUEUE_LENGTH;
-	    
-	    delegate = [[RFCOMMChannelDelegate alloc] initWithCmdID:0 andSubID:s->id];
-	    err = [channel setDelegate:delegate];
-
-	    if (err != kIOReturnSuccess) {
-		DEBUGF("RFCOMM: accept error %d:", err);
-		[channel closeChannel]; //IOBluetoothRFCOMMChannelCloseChannel(channel);
-		// delete delegate?
-	    }
-	    else {
-		const BluetoothDeviceAddress* addr;
-		BluetoothRFCOMMChannelID channel_id;
-		IOBluetoothDevice* device;
-		UInt8 buf[64];
-		Data data;
-
-		if ((device = [channel getDevice]) == NULL) {
-		    DEBUGF("RFCOMM: accept no device", 0);
-		    [channel closeChannel];
-		    continue;
-		}
-		if ((addr = [device getAddress]) == NULL) {
-		    DEBUGF("RFCOMM: accept no address", 0);
-		    [channel closeChannel];
-		    continue;
-		}
-		channel_id = [channel getChannelID];
-
-		DEBUGF("RFCOMM: accept on %d", channel_id);
-
-		/* we only unlink when we got a channel */
-		sp->wait = listen;
-		s->wait = NULL;
-
-		s->handle = channel;
-
-		/* send EVENT id {accept,Address,Channel} */
-		data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, s->id);
-		put_tag(&data, TUPLE);
-		put_atom(&data, "accept");
-		put_addr(&data, addr);
-		put_uint8(&data, channel_id);
-		put_tag(&data, TUPLE_END);
-		data_send(&data, 1);
-		data_final(&data);
-		break;
-	    } 
-	}
-    }
-}
-
-// special open callback ! 
-void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBluetoothObjectRef objectRef )
-{
-    IOBluetoothRFCOMMChannel* channel = (IOBluetoothRFCOMMChannel*) objectRef;
-    Subscription* listen = (Subscription*) userRefCon;
-    ListenQueue* lq = (ListenQueue*) listen->opaque;    
-    int qh_next;
-    (void) inRef;
-
-    DEBUGF("RFCOMM: notification", 0);
-    qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
-    if (qh_next == lq->qt) {
-	DEBUGF("RFCOMM: listen queue full", 0);
-	/* If queue is full possibly delete the oldest/newest ? */
-	return;
-    }
-    else {
-	lq->qelem[lq->qh] = (IOBluetoothObjectRef) channel;
-	lq->qh = qh_next;
-	[channel retain];
-	rfcomm_accept(listen);
-    }
-}
-
-
-
-/*****************************************************************************
- *   L2CAP Callbacks 
-******************************************************************************/
-
-// L2CAP delegate
-@interface L2CAPChannelDelegate : NSObject <IOBluetoothL2CAPChannelDelegate> {
-    UInt32 mSubID;
-    UInt32 mCmdID;
-}
-
-- (instancetype)initWithCmdID:(UInt32) cmdid andSubID:(UInt32) subid;
-@end
+// -----------------------------------------------------------------------
+//   L2CAPChannelDelegate
+// -----------------------------------------------------------------------
 
 @implementation L2CAPChannelDelegate
 
-- (instancetype)initWithCmdID:(UInt32) cmdid andSubID:(UInt32) subid
+- (instancetype)initWithSub:(subscription_t*) s andCtx:(bt_ctx_t*) ctx
 {
     if (self = [super init]) {
-	mCmdID = cmdid;
-	mSubID = subid;
+	mSub = s; // weak
+	mCtx = ctx;
     }
     return self;
+}
+
+- (void) dealloc
+{
+    DEBUGF("L2CAPDelegate: dealloc");
+    [super dealloc];
 }
 
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel*)l2capChannel data:(void *)dataPointer length:(size_t)dataLength
@@ -1795,10 +1968,10 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     Data data;
     (void) l2capChannel;
 
-    DEBUGF("L2CAP: Data size=%d", dataLength);
+    DEBUGF("L2CAPChannelDelegate: Data size=%d", dataLength);
     data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
     put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSubID);
+    put_UINT32(&data, mSub->id);
     put_tag(&data, TUPLE);
     put_atom(&data, "data");
     put_binary(&data, dataPointer, dataLength);
@@ -1811,37 +1984,36 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 {
     (void) l2capChannel;
     (void) error;  // fixme check this
-    DEBUGF("L2CAP: OpenComplete",0);
-    bt_ok(mCmdID);
-    mCmdID = 0;
+    DEBUGF("L2CAPChannelDelegate: OpenComplete");
+    bt_ok(mSub->cmdid);
+    mSub->cmdid = 0;
 }
 
 - (void)l2capChannelClosed:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DEBUGF("L2CAP: Closed this", 0);
-    if (mCmdID == 0) {
+    DEBUGF("L2CAPChannelDelegate: Closed this");
+    if (mSub->cmdid == 0) {
 	UInt8 buf[64];
 	Data data;
 	    
 	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSubID);
+	put_UINT32(&data, mSub->id);
 	put_atom(&data, "closed");
 	data_send(&data, 1);
 	data_final(&data);
-	remove_subscription(L2CAP, mSubID);
     }
     else {
-	bt_ok(mCmdID);
-	remove_subscription(L2CAP, mSubID);
+	bt_ok(mSub->cmdid);
     }
+    remove_subscription(&mCtx->list,L2CAP,mSub->id);
 }
 
 - (void)l2capChannelReconfigured:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DEBUGF("L2CAP: Reconfigured",0);
+    DEBUGF("L2CAPChannelDelegate: Reconfigured");
 }
 
 - (void)l2capChannelWriteComplete:(IOBluetoothL2CAPChannel*)l2capChannel refcon:(void*)refcon status:(IOReturn)error
@@ -1850,11 +2022,11 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     UInt32 len;
     (void)error;
 
-    DEBUGF("L2CAP: WriteComplete",0);
+    DEBUGF("L2CAPChannelDelegate: WriteComplete");
     if ((len=data_avail(out)) == 0) {
 	data_free(out);
-	bt_ok(mCmdID);
-	mCmdID = 0;
+	bt_ok(mSub->cmdid);
+	mSub->cmdid = 0;
     }
     else {
 	BluetoothL2CAPMTU mtu = [l2capChannel outgoingMTU];
@@ -1864,8 +2036,8 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 	data_forward(out, len); /* move to next block */
 	err = [l2capChannel writeAsync:ptr length:len refcon:out];
 	if (err != kIOReturnSuccess) {
-	    bt_error(mCmdID, err);
-	    mCmdID=0;
+	    bt_error(mSub->cmdid, err);
+	    mSub->cmdid=0;
 	    data_free(out);
 	}
     }
@@ -1874,15 +2046,129 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 - (void)l2capChannelQueueSpaceAvailable:(IOBluetoothL2CAPChannel*)l2capChannel
 {
     (void) l2capChannel;
-    DEBUGF("L2CAP: QueueSpaceAvailable",0);
+    DEBUGF("L2CAPChannelDelegate: QueueSpaceAvailable");
 }
 
 @end
 
+// -----------------------------------------------------------------------
+
+
 /* check if we have a listner setup channel event listner */
-void l2cap_accept(Subscription* listen)
+void rfcomm_accept(subscription_t* listen)
 {
-    ListenQueue*  lq = (ListenQueue*) listen->opaque;
+    listen_queue_t*  lq = (listen_queue_t*) listen->opaque;
+    bt_ctx_t* ctx = lq->ctx;
+
+    if (listen->type != RFCOMM_LISTEN) {
+	DEBUGF("RFCOMM: not a listen subscription", 0);
+    }
+    else if (lq->qh == lq->qt) {
+	DEBUGF("RFCOMM: listen queue empty");
+    }
+    else {
+	subscription_link_t* link;
+	
+	if ((link = lq->wait.last) == NULL) {  // peek
+	    DEBUGF("RFCOMM: no acceptor");
+	}
+	else {
+	    RFCOMMChannelDelegate* delegate;
+	    subscription_t* s = link->s;
+
+	    delegate = [[RFCOMMChannelDelegate alloc] initWithSub:s andCtx:ctx];
+
+	    /* loop until we find a working channel */
+	    while (lq->qh != lq->qt) {
+		IOBluetoothRFCOMMChannel* channel = 
+		    (IOBluetoothRFCOMMChannel*) lq->qelem[lq->qt];
+		IOReturn err;
+
+		lq->qelem[lq->qt] = NULL;
+		lq->qt = (lq->qt+1) % LISTEN_QUEUE_LENGTH;
+
+		err = [channel setDelegate:delegate];
+
+		if (err != kIOReturnSuccess) {
+		    DEBUGF("RFCOMM: accept error %d:", err);
+		    [channel closeChannel];
+		}
+		else {
+		    const BluetoothDeviceAddress* addr;
+		    BluetoothRFCOMMChannelID channel_id;
+		    IOBluetoothDevice* device;
+		    UInt8 buf[64];
+		    Data data;
+		    
+		    if ((device = [channel getDevice]) == NULL) {
+			DEBUGF("RFCOMM: accept no device");
+			[channel closeChannel];
+			[channel release];
+			continue;
+		    }
+		    if ((addr = [device getAddress]) == NULL) {
+			DEBUGF("RFCOMM: accept no address");
+			[channel closeChannel];
+			[channel release];
+			continue;
+		    }
+		    s->handle = channel;
+		    s->accept = NULL;
+		    channel_id = [channel getChannelID];
+
+		    DEBUGF("RFCOMM: accept on %d", channel_id);
+
+		    unlink_subscription(link);
+
+		    /* send EVENT id {accept,Address,Channel} */
+		    data_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
+		    put_tag(&data, REPLY_EVENT);
+		    put_UINT32(&data, s->id);
+		    put_tag(&data, TUPLE);
+		    put_atom(&data, "accept");
+		    put_addr(&data, addr);
+		    put_uint8(&data, channel_id);
+		    put_tag(&data, TUPLE_END);
+		    data_send(&data, 1);
+		    data_final(&data);
+		    return;
+		}
+	    }
+	    [delegate release];  // no working channel found
+	}
+    }
+}
+
+// special open callback ! 
+void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBluetoothObjectRef objectRef )
+{
+    IOBluetoothRFCOMMChannel* channel = (IOBluetoothRFCOMMChannel*) objectRef;
+    subscription_t* listen = (subscription_t*) userRefCon;
+    listen_queue_t* lq = (listen_queue_t*) listen->opaque;
+    int qh_next;
+    (void) inRef;
+
+    DEBUGF("RFCOMM: notification", 0);
+    qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
+    if (qh_next == lq->qt) {
+	DEBUGF("RFCOMM: listen queue full");
+	/* If queue is full possibly delete the oldest/newest ? */
+	// close it?
+	return;
+    }
+    else {
+	lq->qelem[lq->qh] = (IOBluetoothObjectRef) channel;
+	lq->qh = qh_next;
+	[channel retain];
+	rfcomm_accept(listen);
+    }
+}
+
+/* check if we have a listner setup channel event listner */
+void l2cap_accept(subscription_t* listen)
+{
+    listen_queue_t*  lq = (listen_queue_t*) listen->opaque;
+    bt_ctx_t* ctx = lq->ctx;
 
     if (listen->type != L2CAP_LISTEN) {
 	DEBUGF("L2CAP: not a listen subscription", 0);
@@ -1890,86 +2176,84 @@ void l2cap_accept(Subscription* listen)
     else if (lq->qh == lq->qt) {
 	DEBUGF("L2CAP: listen queue empty", 0);
     }
-    else if (listen->wait == listen) {
-	DEBUGF("L2CAP: listen no waiter", 0);
-    }
     else {
-	Subscription* sp = listen->wait;
-	Subscription* s;
-	L2CAPChannelDelegate* delegate;
+	subscription_link_t* link;
+	
+	if ((link = lq->wait.last) == NULL) {  // peek
+	    DEBUGF("L2CAP: no acceptor");
+	}
+	else {
+	    L2CAPChannelDelegate* delegate;
+	    subscription_t* s = link->s;
 
-	/* find the last acceptor (last in list) and unlink */	
-	while(sp->wait->wait != listen)
-	    sp = sp->wait;
-	s = sp->wait;
+	    delegate = [[L2CAPChannelDelegate alloc] initWithSub:s andCtx:ctx];
 
-	/* loop until we find a working channel */
-	while (lq->qh != lq->qt) {
-	    IOBluetoothL2CAPChannel* channel = 
-		(IOBluetoothL2CAPChannel*) lq->qelem[lq->qt];
-	    IOReturn err;
-
-	    lq->qelem[lq->qt] = NULL;
-	    lq->qt = (lq->qt+1) % LISTEN_QUEUE_LENGTH;
-
-	    delegate = [[L2CAPChannelDelegate alloc] initWithCmdID:0
-			andSubID:s->id];
-	    err = [channel setDelegate:delegate];
-
-	    if (err != kIOReturnSuccess) {
-		DEBUGF("L2CAP: accept error %d:", err);
-		[channel closeChannel];
-	    }
-	    else {
-		const BluetoothDeviceAddress* addr;
-		BluetoothL2CAPPSM psm;
-		IOBluetoothDevice* device;
-		UInt8 buf[64];
-		Data data;
+	    /* loop until we find a working channel */
+	    while (lq->qh != lq->qt) {
+		IOBluetoothL2CAPChannel* channel = 
+		    (IOBluetoothL2CAPChannel*) lq->qelem[lq->qt];
+		IOReturn err;
 		
-		if ((device = [channel device]) == NULL) {
-		    DEBUGF("L2CAP: accept no device", 0);
+		lq->qelem[lq->qt] = NULL;
+		lq->qt = (lq->qt+1) % LISTEN_QUEUE_LENGTH;
+
+		err = [channel setDelegate:delegate];
+
+		if (err != kIOReturnSuccess) {
+		    DEBUGF("L2CAP: accept error %d:", err);
 		    [channel closeChannel];
-		    continue;
+		    [channel release];
 		}
-		psm = [channel PSM];
-		if ((addr = [device getAddress]) == NULL) {
-		    DEBUGF("L2CAP: accept no address", 0);
-		    [channel closeChannel];
-		    continue;
+		else {
+		    const BluetoothDeviceAddress* addr;
+		    BluetoothL2CAPPSM psm;
+		    IOBluetoothDevice* device;
+		    UInt8 buf[64];
+		    Data data;
+		
+		    if ((device = [channel device]) == NULL) {
+			DEBUGF("L2CAP: accept no device", 0);
+			[channel closeChannel];
+			[channel release];
+			continue;
+		    }
+		    psm = [channel PSM];
+		    if ((addr = [device getAddress]) == NULL) {
+			DEBUGF("L2CAP: accept no address", 0);
+			[channel closeChannel];
+			[channel release];
+			continue;
+		    }
+		    DEBUGF("L2CAP: accept psm=%d", psm);
+		    s->handle = channel;
+		    s->accept = NULL;
+		    unlink_subscription(link);
+
+		    /* send EVENT id {accept,Address,Psm} */
+		    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+		    put_tag(&data, REPLY_EVENT);
+		    put_UINT32(&data, s->id);
+		    put_tag(&data, TUPLE);
+		    put_atom(&data, "accept");
+		    put_addr(&data, addr);
+		    put_uint16(&data, psm);
+		    put_tag(&data, TUPLE_END);
+		    data_send(&data, 1);
+		    data_final(&data);
+		    return;
 		}
-		DEBUGF("L2CAP: accept psm=%d", psm);
-
-		/* we only unlink when we got a channel */
-		sp->wait = listen;
-		s->wait = NULL;
-
-		s->handle = channel;
-
-		/* send EVENT id {accept,Address,Psm} */
-		data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, s->id);
-		put_tag(&data, TUPLE);
-		put_atom(&data, "accept");
-		put_addr(&data, addr);
-		put_uint16(&data, psm);
-		put_tag(&data, TUPLE_END);
-		data_send(&data, 1);
-		data_final(&data);
-		break;
-	    } 
+	    }
+	    [delegate release];  // no working channel found
 	}
     }
 }
 
-
 void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBluetoothObjectRef objectRef )
 {
-    IOBluetoothL2CAPChannel* l2capChannel =
+    IOBluetoothL2CAPChannel* l2capChannel = 
 	(IOBluetoothL2CAPChannel*) objectRef;
-    Subscription* listen = (Subscription*) userRefCon;
-    ListenQueue* lq = (ListenQueue*) listen->opaque;
+    subscription_t* listen = (subscription_t*) userRefCon;
+    listen_queue_t* lq = (listen_queue_t*) listen->opaque;
     int qh_next;
     (void) inRef;
 
@@ -1978,6 +2262,7 @@ void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBl
     if (qh_next == lq->qt) {
 	DEBUGF("L2CAP: listen queue full", 0);
 	/* If queue is full possibly delete the oldest/newest ? */
+	// close?
 	return;
     }
     else {
@@ -1989,14 +2274,25 @@ void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBl
 }
 
 
-void bt_command(const UInt8* src, UInt32 src_len)
+void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 {
-    UInt8  op = 0;
-    UInt32 cmdid = 0;
+    uint8_t  op = 0;
+    uint32_t cmdid = 0;
     IOReturn bt_error = kIOReturnSuccess;
-    UInt8   out_buf[2048];
+    uint8_t  out_buf[2048];
     Data data_in;
     Data data_out;
+
+    // dump subscription list
+    if (debug_level == DLOG_DEBUG) {
+	subscription_link_t* p = ctx->list.first;
+	fprintf(stderr, "ctx.list = {");
+	while(p) {
+	    fprintf(stderr, " %s,", format_subscription(p->s));
+	    p = p->next;
+	}
+	fprintf(stderr, "}\r\n");
+    }
 
     data_init(&data_in, (UInt8*)src, src_len, 0, FALSE);
     data_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
@@ -2006,10 +2302,9 @@ void bt_command(const UInt8* src, UInt32 src_len)
     if (!get_UInt32(&data_in, &cmdid))
 	goto badarg;
 
-    DEBUGF("COMMAND %d cmdid=%d", op, cmdid);
-
     switch (op) {
     case CMD_PING: {
+	DEBUGF("CMD_PING cmdid=%d", cmdid);
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
 	put_string(&data_out, "pong");
@@ -2017,6 +2312,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
     }
 
     case CMD_DEBUG: {  // <<level>>
+	DEBUGF("CMD_DEBUG cmdid=%d", cmdid);
 	if (!get_int32(&data_in, &debug_level))
 	    goto badarg;
 	put_tag(&data_out, REPLY_OK);
@@ -2026,6 +2322,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_PAIRED_DEVICES: {
 	NSArray* devices = [IOBluetoothDevice pairedDevices];
+	DEBUGF("CMD_PAIRED_DEVICE cmdid=%d", cmdid);
 
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
@@ -2038,6 +2335,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_FAVORITE_DEVICES: {
 	NSArray* devices = [IOBluetoothDevice favoriteDevices];
 
+	DEBUGF("CMD_FAVORITE_DEVICE cmdid=%d", cmdid);
+
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
 	bt_device_list(devices, &data_out);
@@ -2048,6 +2347,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_RECENT_DEVICES: {
 	NSArray* devices = [IOBluetoothDevice recentDevices:0];
+
+	DEBUGF("CMD_RECENT_DEVICES cmdid=%d", cmdid);
 	
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
@@ -2063,7 +2364,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	UInt32 secs;
 	InquiryDelegate* delegate;
 	IOBluetoothDeviceInquiry* inquiry;
-	Subscription* s;
+	subscription_t* s;
 	
 	/* NOTE: The behavior when running multiple inquery is
 	 * random (buggy, undefined?) use one at the time as
@@ -2074,21 +2375,28 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if (!get_UInt32(&data_in, &secs))
 	    goto badarg;
 
-	if ((s = new_subscription(INQUIRY, id, NULL)) == NULL)
+	DEBUGF("CMD_INQUIRY_START cmdid=%d id=%u secs=%u", 
+	       cmdid, id, secs);
+
+	if ((s = new_subscription(INQUIRY,id,0,NULL)) == NULL)
 	    goto mem_error;
-	delegate = [[InquiryDelegate alloc] initWithSubID:id];
+
+	delegate = [[InquiryDelegate alloc] initWithSub:s];
 	inquiry = [[IOBluetoothDeviceInquiry alloc] initWithDelegate:delegate];
+
 	s->handle = inquiry;
 	inquiry.inquiryLength = secs;
 	inquiry.updateNewDeviceNames = FALSE;
 	
 	bt_error=[inquiry start];
 	if (bt_error == kIOReturnSuccess) {
-	    insert_subscription(s);
+	    insert_last(&ctx->list, s);
 	    goto ok;
 	}
 	else {
-	    free_subscription(s);
+	    release_subscription(s);
+	    [inquiry release];
+	    [delegate release];
 	    goto error;
 	}
 	break;
@@ -2097,15 +2405,18 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_INQUIRY_STOP: { /* arguments: id:32 */
 	UInt32 id;
 	IOBluetoothDeviceInquiry* inquiry;
-	Subscription** sptr;
+	subscription_t* s;
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
 
-	if ((sptr = find_subscription(INQUIRY,id)) == NULL)
+	DEBUGF("CMD_INQUIRY_STOP cmdid=%d, id=%u", cmdid, id);
+
+	if ((s = find_subscription(&ctx->list,INQUIRY,id)) == NULL)
 	    goto badarg;
-	inquiry = (IOBluetoothDeviceInquiry*)((*sptr)->handle);
+	inquiry = (IOBluetoothDeviceInquiry*)(s->handle);
 	[inquiry stop];
+	remove_subscription(&ctx->list,INQUIRY,id);
 	goto ok;
     }
 
@@ -2116,7 +2427,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	Boolean auth = FALSE;
 	Boolean opts = FALSE;
 	UInt32 milli;
-	ConnectCallback* delegate;
+	ConnectDelegate* delegate;
+	subscription_t* s;
+
+	DEBUGF("CMD_CONNECT cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2136,17 +2450,22 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    if (data_avail(&data_in) != 0)
 		goto badarg;
 	}
+	if ((s = new_subscription(CONNECT,0,cmdid,NULL)) == NULL)
+	    goto mem_error;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
-	delegate = [[ConnectCallback alloc] initWithCmdID:cmdid];
+	delegate = [[ConnectDelegate alloc] initWithSub:s];
 	if (opts)
-	    bt_error = [device openConnection:delegate 
+	    bt_error = [device openConnection:delegate
 			withPageTimeout:timeout
 			authenticationRequired: auth];
 	else
 	    bt_error = [device openConnection:delegate];
-	if (bt_error != kIOReturnSuccess)
+	if (bt_error != kIOReturnSuccess) {
+	    [delegate release];
+	    free_subscription(s);
 	    goto error;
+	}
 	/* callback will do the rest */
 	break;
     }
@@ -2154,6 +2473,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_DISCONNECT: { /* arg = bt-address(6)  */
 	BluetoothDeviceAddress bt_addr;
 	IOBluetoothDevice* device;
+
+	DEBUGF("CMD_DISCONNECT cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2174,7 +2495,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	Boolean opts = FALSE;
 	UInt32 milli;
 	BluetoothHCIPageTimeout timeout;
-	RemoteNameLookup* delegate;
+	RemoteNameDelegate* delegate;
+	subscription_t* s;
+
+	DEBUGF("CMD_REMOTE_NAME cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2194,17 +2518,21 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	}
 
 	if (data_avail(&data_in) != 0)
-	    goto badarg;	
-
+	    goto badarg;
+	if ((s = new_subscription(REMOTE_NAME,0,cmdid,NULL)) == NULL)
+	    goto mem_error;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
-	delegate = [[RemoteNameLookup alloc] initWithCmdID:cmdid];
+	delegate = [[RemoteNameDelegate alloc] initWithSub:s];
 	if (opts && (timeout != 0))
-	    [device remoteNameRequest:delegate withPageTimeout:timeout];
+	    bt_error = [device remoteNameRequest:delegate withPageTimeout:timeout];
 	else 
-	    [device remoteNameRequest:delegate];
-	if (bt_error != kIOReturnSuccess)
+	    bt_error = [device remoteNameRequest:delegate];
+	if (bt_error != kIOReturnSuccess) {
+	    [delegate release];
+	    free_subscription(s);
 	    goto error;
+	}
 	/* callback will do the rest */
 	break;
     }
@@ -2212,6 +2540,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_DEVICE_INFO: { /* arg = bt-address(6) info-items */
 	BluetoothDeviceAddress bt_addr;
 	IOBluetoothDevice* device;
+
+	DEBUGF("CMD_DEVICE_INFO cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2224,6 +2554,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
     }
 
     case CMD_LOCAL_INFO: { /* arg = info-items */
+	DEBUGF("CMD_LOCAL_INFO cmdid=%d", cmdid);
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
 	bt_local_info(&data_in, &data_out);
@@ -2235,6 +2566,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	IOBluetoothDevice* device;
 	IOBluetoothSDPUUID* uuid;
 	UInt32 n;
+
+	DEBUGF("CMD_SERVICE_INFO cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2255,7 +2588,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	BluetoothDeviceAddress bt_addr;
 	IOBluetoothDevice* device;
 	IOBluetoothSDPUUID* uuid;
-	SDPLookup* delegate;
+	SDPQueryDelegate* delegate;
+	subscription_t* s;
+
+	DEBUGF("CMD_SERVICE_QUERY cmdid=%d", cmdid);
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
@@ -2265,36 +2601,44 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	
-	delegate = [[SDPLookup alloc] initWithCmdID:cmdid andUUID:uuid];
+
+	if ((s = new_subscription(SDP_QUERY,0,cmdid,NULL)) == NULL)
+	    goto mem_error;
+	delegate = [[SDPQueryDelegate alloc] initWithSub:s andUUID:uuid];
 	// FIXME: add uuid match
 	bt_error = [device performSDPQuery:delegate];
-	if (bt_error == kIOReturnSuccess)
-	    goto done;
-	goto error;
+	if (bt_error != kIOReturnSuccess) {
+	    [delegate release];
+	    free_subscription(s);
+	    goto error;
+	}
+	goto done;
     }
-
 
     case CMD_SERVICE_DEL: { /* id:32 */
 	UInt32 id;
+	subscription_link_t* link;
+
+	DEBUGF("CMD_SERVICE_DEL cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 	DEBUGF("SERVICE_CLOSE: id=%d", id);
-	if (find_subscription(SDP,id) != NULL) {
-	    remove_subscription(RFCOMM, id);
+	if ((link=find_subscription_link(&ctx->list,SDP,id)) != NULL) {
+	    unlink_subscription(link);
 	    goto ok;
 	}
 	goto badarg;
     }
 
-
     case CMD_SERVICE_ADD: { /* id:32 sdp-service-data/binary */
 	UInt32 id;
 	NSDictionary* serviceDict;
 	IOBluetoothSDPServiceRecord* serviceRecord;
+
+	DEBUGF("CMD_SERVICE_ADD cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2320,23 +2664,21 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	}
 #endif
 	// FIXME: set device if service specific for a certain device
-	serviceRecord = [IOBluetoothSDPServiceRecord 
-			 withServiceDictionary:serviceDict
+	serviceRecord = [IOBluetoothSDPServiceRecord
+			 withServiceDictionary:serviceDict 
 			 device:NULL];
 	if (serviceRecord == NULL) {
 	    bt_error = kIOReturnNoMemory;
 	    goto error;
 	}
 	else {
-	    Subscription* s;
+	    subscription_t* s;
 	    BluetoothSDPServiceRecordHandle serviceRecordHandle;
 
-	    if ((s = new_subscription(SDP, id, NULL)) == NULL)
+	    if ((s = new_subscription(SDP,id,cmdid,serviceRecord)) == NULL)
 		goto mem_error;
-	    s->cmdid = cmdid;
-	    s->handle = serviceRecord;
-	    insert_subscription(s);
-
+	    if (insert_last(&ctx->list, s) < 0)
+		goto mem_error;
 	    bt_error = [serviceRecord 
 			getServiceRecordHandle:&serviceRecordHandle];
 	    if (bt_error != kIOReturnSuccess)
@@ -2350,16 +2692,18 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_SERVICE_RFCOMM: { /* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
+
+	DEBUGF("CMD_SERVICE_RFCOMM cmdid=%d", cmdid);
 	
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	if ((sptr = find_subscription(SDP,id)) != NULL) { 
+	if ((s = find_subscription(&ctx->list,SDP,id)) != NULL) { 
 	    BluetoothRFCOMMChannelID channelID;
-	    IOBluetoothSDPServiceRecord* serviceRecord = (IOBluetoothSDPServiceRecord*) (*sptr)->handle;
-
+	    IOBluetoothSDPServiceRecord* serviceRecord = 
+		(IOBluetoothSDPServiceRecord*) s->handle;
 	    bt_error = [serviceRecord getRFCOMMChannelID:&channelID];
 	    if (bt_error == kIOReturnSuccess) {
 		put_tag(&data_out, REPLY_OK);
@@ -2379,7 +2723,9 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	IOBluetoothRFCOMMChannel* channel;
 	BluetoothRFCOMMChannelID channel_id;
 	RFCOMMChannelDelegate* delegate;
-	Subscription* s;
+	subscription_t* s;
+
+	DEBUGF("CMD_RFCOMM_OPEN cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2394,20 +2740,19 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
 
-	DEBUGF("RFCOMM_OPEN; %d channel=%d", id, channel_id);
-	
-	if ((s = new_subscription(RFCOMM, id, NULL)) == NULL)
+	if ((s = new_subscription(RFCOMM,id,cmdid, NULL)) == NULL)
 	    goto mem_error;
-	s->cmdid = cmdid;
-	delegate = [[RFCOMMChannelDelegate alloc] initWithCmdID:cmdid andSubID:id];
+	delegate = [[RFCOMMChannelDelegate alloc] initWithSub:s andCtx:ctx];
 	bt_error = [device openRFCOMMChannelAsync:&channel
-		    withChannelID:channel_id delegate:delegate];
+				    withChannelID:channel_id 
+					 delegate:delegate];
 	if (bt_error == kIOReturnSuccess) {
 	    s->handle = channel;
-	    insert_subscription(s);
+	    insert_last(&ctx->list, s);
 	    goto done;
 	}
 	else {
+	    [delegate release];
 	    free_subscription(s);
 	    goto error;
 	}
@@ -2416,17 +2761,18 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	
     case CMD_RFCOMM_CLOSE: { /* arguments: id:32 */
 	UInt32 id;
-	Subscription** sptr;
-	IOBluetoothRFCOMMChannel* rfcommChannel;
+	subscription_link_t* link;
+
+	DEBUGF("CMD_RFCOMM_CLOSE cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
-	DEBUGF("RFCOMM_CLOSE: id=%d", id);
-	if ((sptr = find_subscription(RFCOMM,id)) != NULL) {
-	    Subscription* s = *sptr;
 
+	if ((link = find_subscription_link(&ctx->list,RFCOMM,id)) != NULL) {
+	    IOBluetoothRFCOMMChannel* rfcommChannel;
+	    subscription_t* s = link->s;
 	    s->cmdid = cmdid;
 	    rfcommChannel = (IOBluetoothRFCOMMChannel*) (s->handle);
 	    if (rfcommChannel != NULL) {
@@ -2435,31 +2781,33 @@ void bt_command(const UInt8* src, UInt32 src_len)
 		if (bt_error == kIOReturnSuccess)
 		    goto done;
 	    }
-	    else if (s->wait != NULL) {
-		unlink_subscription(s);
-		remove_subscription(RFCOMM, id);
+	    else if (s->accept != NULL) {
+		listen_queue_t* lq = (listen_queue_t*)((s->accept)->opaque);
+		remove_subscription(&lq->wait,RFCOMM,id);
+		unlink_subscription(link);
 		goto ok;
 	    }
 	}
-	else if ((sptr = find_subscription(RFCOMM_LISTEN,id)) != NULL) {
-	    Subscription* listen = *sptr;
-	    Subscription* s = *sptr;
-	    
+	else if ((link = find_subscription_link(&ctx->list,RFCOMM_LISTEN,id)) != NULL) {
+	    subscription_t* listen = link->s;
+	    listen_queue_t* lq = (listen_queue_t*)listen->opaque;
+	    subscription_link_t* link1;
+
+	    // move this code to free subscription ?
 	    /* remove all waiters */
-	    while((s = listen->wait) != listen) {
+	    while((link1=lq->wait.first) != NULL) {
 		UInt8 buf[64];
 		Data data;
 		
-		unlink_subscription(s);
 		data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, s->id);
+		put_UINT32(&data, link1->s->id);
 		put_atom(&data, "closed");
 		data_send(&data, 1);
 		data_final(&data);
-		remove_subscription(RFCOMM, s->id);
+		unlink_subscription(link1);
 	    }
-	    remove_subscription(RFCOMM_LISTEN, id);
+	    unlink_subscription(link);
 	    goto ok;
 	}
 	goto error;
@@ -2469,8 +2817,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	UInt32 id;
 	BluetoothRFCOMMChannelID channel_id;
 	IOBluetoothUserNotificationRef ref;
-	Subscription* listen;
-	ListenQueue* listenq;
+	subscription_t* listen;
+	listen_queue_t* lq;
+
+	DEBUGF("CMD_RFCOMM_LISTEN cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2481,19 +2831,17 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((listen = new_subscription(RFCOMM_LISTEN, id, NULL)) == NULL)
+	if ((listen = new_subscription(RFCOMM_LISTEN,id,cmdid,NULL)) == NULL)
 	    goto mem_error;
-	if ((listenq = malloc(sizeof(ListenQueue))) == NULL) {
+	if ((lq = alloc_type(listen_queue_t)) == NULL) {
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	memset(listenq, 0, sizeof(ListenQueue));
-	listenq->qh = listenq->qt = 0;    /* empty */
-	listen->opaque = (void*) listenq;
-	listen->cmdid = cmdid;
-	listen->wait = listen;    /* circular wait list */
+	lq->ctx = ctx;
+	listen->opaque = (void*) lq;
+
 	if (channel_id == 0)
-	    ref = IOBluetoothRegisterForRFCOMMChannelOpenNotifications(cb_rfcomm_open, (void*) listen);
+	    ref = IOBluetoothRegisterForRFCOMMChannelOpenNotifications(cb_rfcomm_open, (void*)listen);
 	else
 	    ref = IOBluetoothRegisterForFilteredRFCOMMChannelOpenNotifications(
 		cb_rfcomm_open, (void*) listen, channel_id,
@@ -2502,7 +2850,7 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	insert_subscription(listen);
+	insert_last(&ctx->list, listen);
 	listen->handle = ref;
 	goto ok;
     }
@@ -2510,9 +2858,11 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case CMD_RFCOMM_ACCEPT: { /* id:32 listen_id:32 */
 	UInt32 id;
 	UInt32 listen_id;
-	Subscription** sptr;
-	Subscription* listen;
-	Subscription* s;
+	listen_queue_t* lq;
+	subscription_t* listen;
+	subscription_t* s;
+
+	DEBUGF("CMD_RFCOMM_ACCEPT cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2521,25 +2871,22 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((sptr = find_subscription(RFCOMM,id)) != NULL) {
+	if (find_subscription(&ctx->list,RFCOMM,id) != NULL) {
 	    DEBUGF("subscription %d already exists", id);
 	    goto badarg;
 	}
-	if ((sptr = find_subscription(RFCOMM_LISTEN,listen_id)) == NULL) {
+	if ((listen = find_subscription(&ctx->list,
+					RFCOMM_LISTEN,listen_id))==NULL) {
 	    DEBUGF("listen subscription %d does not exists", listen_id);
 	    goto badarg;
 	}
-	listen = *sptr;
-
-	if ((s = new_subscription(RFCOMM, id, NULL)) == NULL)
+	if ((s = new_subscription(RFCOMM,id,cmdid,NULL)) == NULL)
 	    goto mem_error;
+	s->accept = listen;  // mark that we are accepting
+	lq = (listen_queue_t*) listen->opaque;
+	insert_last(&lq->wait, s);
+	insert_last(&ctx->list, s);
 
-	/* put subscription on listenq wait list */
-	s->wait = listen->wait;
-	listen->wait = s;
-	s->cmdid = cmdid;
-	insert_subscription(s);
-	/* We MUST send the OK response before we start accepting */
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
 	data_send(&data_out, 1);
@@ -2549,21 +2896,23 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_RFCOMM_SEND: { /* id:32, data/rest */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothRFCOMMChannel* rfcommChannel;
 	UInt32 len;
 	Data* out;
 	UInt8* ptr;
 	BluetoothRFCOMMMTU mtu;
 
+	DEBUGF("CMD_RFCOMM_SEND cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(RFCOMM,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,RFCOMM,id)) == NULL)
 	    goto badarg;
-	rfcommChannel = (IOBluetoothRFCOMMChannel*) ((*sptr)->handle);
+	rfcommChannel = (IOBluetoothRFCOMMChannel*)(s->handle);
 	if (rfcommChannel == NULL)
 	    goto badarg;
-	(*sptr)->cmdid = cmdid;
+	s->cmdid = cmdid;
 	/* we may have to retain the data while sending !!!
 	 * create a Data and pace the sending MTU wise...
 	 */
@@ -2582,15 +2931,17 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_RFCOMM_MTU: { /* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothRFCOMMChannel* rfcommChannel;
 	BluetoothRFCOMMMTU mtu;
 
+	DEBUGF("CMD_RFCOMM_MTU cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(RFCOMM,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,RFCOMM,id)) == NULL)
 	    goto badarg;
-	rfcommChannel = (IOBluetoothRFCOMMChannel*) (*sptr)->handle;
+	rfcommChannel = (IOBluetoothRFCOMMChannel*) (s->handle);
 	if (rfcommChannel == NULL)
 	    goto badarg;
 	mtu = [rfcommChannel getMTU];
@@ -2602,16 +2953,18 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_RFCOMM_ADDRESS: { /* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothRFCOMMChannel* rfcommChannel;
 	const BluetoothDeviceAddress* addr;
 	IOBluetoothDevice* device;
 
+	DEBUGF("CMD_RFCOMM_ADDRESS cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(RFCOMM,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,RFCOMM,id)) == NULL)
 	    goto badarg;
-	rfcommChannel = (IOBluetoothRFCOMMChannel*) (*sptr)->handle;
+	rfcommChannel = (IOBluetoothRFCOMMChannel*)(s->handle);
 	if (rfcommChannel == NULL)
 	    goto badarg;
 	if ((device = [rfcommChannel getDevice]) == NULL)
@@ -2626,15 +2979,17 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case CMD_RFCOMM_CHANNEL: { /* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothRFCOMMChannel* rfcommChannel;
 	BluetoothRFCOMMChannelID channel_id;
 
+	DEBUGF("CMD_RFCOMM_CHANNEL cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(RFCOMM,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,RFCOMM,id)) == NULL)
 	    goto badarg;
-	rfcommChannel = (IOBluetoothRFCOMMChannel*) (*sptr)->handle;
+	rfcommChannel = (IOBluetoothRFCOMMChannel*)(s->handle);
 	channel_id = [rfcommChannel getChannelID];
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
@@ -2648,8 +3003,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	IOBluetoothDevice* device;
 	IOBluetoothL2CAPChannel* channel;
 	BluetoothL2CAPPSM psm;
-	Subscription* s;
+	subscription_t* s;
 	L2CAPChannelDelegate* delegate;
+
+	DEBUGF("CMD_L2CAP_OPEN cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2665,72 +3022,76 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
 	DEBUGF("L2CAP_OPEN; %d psm=%d", id, psm);
 	
-	if ((s = new_subscription(L2CAP, id, NULL)) == NULL)
+	if ((s = new_subscription(L2CAP,id,cmdid,NULL)) == NULL)
 	    goto mem_error;
-	s->cmdid = cmdid;
-
-	delegate = [[L2CAPChannelDelegate alloc] initWithCmdID:cmdid
-		    andSubID:s->id];
-	bt_error = [device openL2CAPChannelAsync:&channel withPSM:psm 
-		    delegate:delegate];
+	delegate = [[L2CAPChannelDelegate alloc] initWithSub:s andCtx:ctx];
+	bt_error = [device openL2CAPChannelAsync:&channel
+					 withPSM:psm
+					delegate:delegate];
 	if (bt_error == kIOReturnSuccess) {
 	    s->handle = channel;
-	    insert_subscription(s);
+	    insert_last(&ctx->list, s);
 	    goto done;
 	}
 	else {
+	    [delegate release];
 	    free_subscription(s);
 	    goto error;
 	}
 	break;
     }
 
-    case CMD_L2CAP_CLOSE: {/* arguments: id:32 */
+    case CMD_L2CAP_CLOSE: { /* arguments: id:32 */
 	UInt32 id;
-	Subscription** sptr;
-	IOBluetoothL2CAPChannel* l2capChannel;
+	subscription_link_t* link;
+
+	DEBUGF("CMD_L2CAP_CLOSE cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 	DEBUGF("L2CAP_CLOSE: id=%d", id);
-	if ((sptr = find_subscription(L2CAP,id)) != NULL) {
-	    Subscription* s = *sptr;
-
+	if ((link = find_subscription_link(&ctx->list,L2CAP,id)) != NULL) {
+	    IOBluetoothL2CAPChannel* l2capChannel;
+	    subscription_t* s = link->s;
 	    s->cmdid = cmdid;
-	    l2capChannel = (IOBluetoothL2CAPChannel*) (s->handle);
+	    l2capChannel = (IOBluetoothL2CAPChannel*)(s->handle);
 	    if (l2capChannel != NULL) {
 		DEBUGF("L2CAP_CLOSE: channel=%p", l2capChannel);
 		bt_error = [l2capChannel closeChannel];
 		if (bt_error == kIOReturnSuccess)
 		    goto done;
+		
 	    }
-	    else if (s->wait != NULL) {
-		unlink_subscription(s);
-		remove_subscription(L2CAP, id);
+	    else if (s->accept != NULL) {
+		listen_queue_t* lq = (listen_queue_t*)(s->accept)->opaque;
+		remove_subscription(&lq->wait,L2CAP,id);
+		unlink_subscription(link);
 		goto ok;
 	    }
 	}
-	else if ((sptr = find_subscription(L2CAP_LISTEN,id)) != NULL) {
-	    Subscription* listen = *sptr;
-	    Subscription* s = *sptr;
+	else if ((link = find_subscription_link(&ctx->list,L2CAP_LISTEN,id))
+		 != NULL) {
+	    subscription_t* listen = link->s;
+	    listen_queue_t* lq = (listen_queue_t*)listen->opaque;
+	    subscription_link_t* link1;
 	    
+	    // move this code to free subscription ?
 	    /* remove all waiters */
-	    while((s = listen->wait) != listen) {
+	    while((link1=lq->wait.first) != NULL) {
 		UInt8 buf[64];
 		Data data;
-		
-		unlink_subscription(s);
-		data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+
+		data_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
 		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, s->id);
+		put_UINT32(&data, link1->s->id);
 		put_atom(&data, "closed");
 		data_send(&data, 1);
 		data_final(&data);
-		remove_subscription(L2CAP, s->id);
+		unlink_subscription(link1);
 	    }
-	    remove_subscription(L2CAP_LISTEN, id);
+	    unlink_subscription(link);
 	    goto ok;
 	}
 	goto error;
@@ -2740,8 +3101,10 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	UInt32 id;
 	BluetoothL2CAPPSM psm;
 	IOBluetoothUserNotificationRef ref;
-	Subscription* listen;
-	ListenQueue* listenq;
+	subscription_t* listen;
+	listen_queue_t* lq;
+
+	DEBUGF("CMD_L2CAP_LISTEN cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2750,17 +3113,14 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((listen = new_subscription(L2CAP_LISTEN, id, NULL)) == NULL)
+	if ((listen = new_subscription(L2CAP_LISTEN,id,cmdid,NULL)) == NULL)
 	    goto mem_error;
-	if ((listenq = malloc(sizeof(ListenQueue))) == NULL) {
+	if ((lq = alloc_type(listen_queue_t)) == NULL) {
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	memset(listenq, 0, sizeof(ListenQueue));
-	listenq->qh = listenq->qt = 0;    /* empty */
-	listen->opaque = (void*) listenq;
-	listen->cmdid = cmdid;
-	listen->wait = listen;    /* circular wait list */
+	lq->ctx = ctx;
+	listen->opaque = (void*) lq;
 	if (psm == 0)
 	    ref = IOBluetoothRegisterForL2CAPChannelOpenNotifications(cb_l2cap_open, (void*) listen);
 	else
@@ -2771,28 +3131,30 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	insert_subscription(listen);
+	insert_last(&ctx->list, listen);
 	listen->handle = ref;
 	goto ok;
     }
 
     case  CMD_L2CAP_SEND: { /* id:32, data/rest */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothL2CAPChannel* l2capChannel;
 	UInt32 len;
 	Data* out;
 	UInt8* ptr;
 	BluetoothL2CAPMTU mtu;
 
+	DEBUGF("CMD_L2CAP_SEND cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(L2CAP,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,L2CAP,id)) == NULL)
 	    goto badarg;
-	l2capChannel = (IOBluetoothL2CAPChannel*) ((*sptr)->handle);
+	l2capChannel = (IOBluetoothL2CAPChannel*)(s->handle);
 	if (l2capChannel == NULL)
 	    goto badarg;
-	(*sptr)->cmdid = cmdid;
+	s->cmdid = cmdid;
 	/* we may have to retain the data while sending !!!
 	 * create a Data and pace the sending MTU wise...
 	 */
@@ -2812,9 +3174,11 @@ void bt_command(const UInt8* src, UInt32 src_len)
     case  CMD_L2CAP_ACCEPT: { /* id:32 listen_id:32 */
 	UInt32 id;
 	UInt32 listen_id;
-	Subscription** sptr;
-	Subscription* listen;
-	Subscription* s;
+	listen_queue_t* lq;
+	subscription_t* listen;
+	subscription_t* s;
+
+	DEBUGF("CMD_L2CAP_ACCEPT cmdid=%d", cmdid);
 
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
@@ -2823,25 +3187,22 @@ void bt_command(const UInt8* src, UInt32 src_len)
 	if (data_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((sptr = find_subscription(L2CAP,id)) != NULL) {
+	if (find_subscription(&ctx->list,L2CAP,id) != NULL) {
 	    DEBUGF("subscription %d already exists", id);
 	    goto badarg;
 	}
-	if ((sptr = find_subscription(L2CAP_LISTEN,listen_id)) == NULL) {
+	if ((listen = find_subscription(&ctx->list,L2CAP_LISTEN,listen_id))
+	    ==NULL) {
 	    DEBUGF("listen subscription %d does not exists", listen_id);
 	    goto badarg;
 	}
-	listen = *sptr;
-
-	if ((s = new_subscription(L2CAP, id, NULL)) == NULL)
+	if ((s = new_subscription(L2CAP,id,cmdid,NULL)) == NULL)
 	    goto mem_error;
+	s->accept = listen;  // mark that we are accepting
+	lq = (listen_queue_t*) listen->opaque;
+	insert_last(&lq->wait, s);
+	insert_last(&ctx->list, s);
 
-	/* put subscription on listenq wait list */
-	s->wait = listen->wait;
-	listen->wait = s;
-	s->cmdid = cmdid;
-	insert_subscription(s);
-	/* We MUST send the OK response before we start accepting */
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);	
 	data_send(&data_out, 1);
@@ -2851,15 +3212,17 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case  CMD_L2CAP_MTU: {/* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothL2CAPChannel* l2capChannel;
 	BluetoothL2CAPMTU mtu;
 
+	DEBUGF("CMD_L2CAP_MTU cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(L2CAP,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,L2CAP,id)) == NULL)
 	    goto badarg;
-	l2capChannel = (IOBluetoothL2CAPChannel*) ((*sptr)->handle);
+	l2capChannel = (IOBluetoothL2CAPChannel*)(s->handle);
 	if (l2capChannel == NULL)
 	    goto badarg;
 	mtu = [l2capChannel outgoingMTU];
@@ -2871,16 +3234,18 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case  CMD_L2CAP_ADDRESS: { /* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothL2CAPChannel* l2capChannel;
 	const BluetoothDeviceAddress* addr;
 	IOBluetoothDevice* device;
 
+	DEBUGF("CMD_L2CAP_ADDRESS cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(L2CAP,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,L2CAP,id)) == NULL)
 	    goto badarg;
-	l2capChannel = (IOBluetoothL2CAPChannel*) ((*sptr)->handle);
+	l2capChannel = (IOBluetoothL2CAPChannel*) (s->handle);
 	if (l2capChannel == NULL)
 	    goto badarg;
 	if ((device = [l2capChannel device]) == NULL)
@@ -2895,15 +3260,17 @@ void bt_command(const UInt8* src, UInt32 src_len)
 
     case  CMD_L2CAP_PSM: {/* id:32 */
 	UInt32 id;
-	Subscription** sptr;
+	subscription_t* s;
 	IOBluetoothL2CAPChannel* l2capChannel;
 	BluetoothL2CAPPSM psm;
 
+	DEBUGF("CMD_L2CAP_PSM cmdid=%d", cmdid);
+
 	if (!get_UInt32(&data_in, &id))
 	    goto badarg;
-	if ((sptr = find_subscription(L2CAP,id)) == NULL)
+	if ((s = find_subscription(&ctx->list,L2CAP,id)) == NULL)
 	    goto badarg;
-	l2capChannel = (IOBluetoothL2CAPChannel*) ((*sptr)->handle);
+	l2capChannel = (IOBluetoothL2CAPChannel*) (s->handle);
 	psm = [l2capChannel PSM];
 	put_tag(&data_out, REPLY_OK);
 	put_UINT32(&data_out, cmdid);
@@ -2912,7 +3279,8 @@ void bt_command(const UInt8* src, UInt32 src_len)
     }
 
     default:
-	break;
+	DEBUGF("CMD_UNKNOWN = %d cmdid=%d", op, cmdid);
+	goto badarg;
     }
 
     goto done;
@@ -2951,60 +3319,60 @@ done:
  * Handle input commands from Erlang (or other program)
  */
 
-void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address, 
+void pipe_callback(PipeRef pipe, PipeCallBackType type, CFDataRef address,
 		   const void *data, void *info)
 {
-    MainData* pinfo = (MainData*) info;
+    bt_ctx_t* ctx = (bt_ctx_t*) info;
     (void) address;
     (void) data;
 
-    DEBUGF("PIPE: callback type=%d", type);
+    // DEBUGF("PIPE: callback type=%d", type);
     if (type == kPipeReadCallBack) {
 	int fd = CFSocketGetNative(pipe);
 	int n;
 
-	if (pinfo->pbuf_len < sizeof(pinfo->pbuf)) {
-	    int r = sizeof(pinfo->pbuf) - pinfo->pbuf_len;
-	    if ((n = read(fd, pinfo->pbuf+pinfo->pbuf_len, r)) < 0)
+	if (ctx->pbuf_len < sizeof(ctx->pbuf)) {
+	    int r = sizeof(ctx->pbuf) - ctx->pbuf_len;
+	    if ((n = read(fd, ctx->pbuf+ctx->pbuf_len, r)) < 0)
 		goto error;
 	    if (n == 0)
 		goto closed;
-	    pinfo->pbuf_len += n;
-	    DEBUGF("READ: %d pbuf_len=%d", n, pinfo->pbuf_len);
-	    if (pinfo->pbuf_len == sizeof(pinfo->pbuf)) {
-		pinfo->len = (pinfo->pbuf[0]<<24) + (pinfo->pbuf[1]<<16) +
-		    (pinfo->pbuf[2]<<8) + pinfo->pbuf[3];
-		DEBUGF("READ: %d packet len=%d", n, pinfo->len);
-		if (pinfo->len > 0) {
-		    pinfo->remain = pinfo->len;
-		    pinfo->packet = (UInt8*) malloc(pinfo->len);
-		    pinfo->ptr = pinfo->packet;
+	    ctx->pbuf_len += n;
+	    // DEBUGF("READ: %d pbuf_len=%d", n, ctx->pbuf_len);
+	    if (ctx->pbuf_len == sizeof(ctx->pbuf)) {
+		ctx->len = (ctx->pbuf[0]<<24) + (ctx->pbuf[1]<<16) +
+		    (ctx->pbuf[2]<<8) + ctx->pbuf[3];
+		// DEBUGF("READ: %d packet len=%d", n, ctx->len);
+		if (ctx->len > 0) {
+		    ctx->remain = ctx->len;
+		    ctx->packet = (uint8_t*) malloc(ctx->len);
+		    ctx->ptr = ctx->packet;
 		}
 		else {
-		    pinfo->remain = 0;
-		    pinfo->pbuf_len = 0;
+		    ctx->remain = 0;
+		    ctx->pbuf_len = 0;
 		}
 	    }
 	}
 	else {
-	    if ((n = read(fd, (void*)pinfo->ptr, pinfo->remain)) < 0)
+	    if ((n = read(fd, (void*)ctx->ptr, ctx->remain)) < 0)
 		goto error;
 	    if (n == 0)
 		goto closed;
-	    DEBUGF("READ: %d packet bytes", n);
-	    pinfo->remain -= n;
-	    DEBUGF("PACKET: remain=%d", pinfo->remain);
-	    pinfo->ptr += n;
-	    if (pinfo->remain == 0) {
-		bt_command(pinfo->packet, pinfo->len);
-		free(pinfo->packet);
-		pinfo->packet = NULL;
-		pinfo->len = 0;
-		pinfo->pbuf_len = 0;
+	    // DEBUGF("READ: %d packet bytes", n);
+	    ctx->remain -= n;
+	    // DEBUGF("PACKET: remain=%d", ctx->remain);
+	    ctx->ptr += n;
+	    if (ctx->remain == 0) {
+		bt_command(ctx, ctx->packet, ctx->len);
+		free(ctx->packet);
+		ctx->packet = NULL;
+		ctx->len = 0;
+		ctx->pbuf_len = 0;
 	    }
 	}
     }
-    DEBUGF("PIPE: callback done",0);
+    // DEBUGF("PIPE: callback done",0);
     return;
 
 error:
@@ -3027,6 +3395,18 @@ int main(int argc, char** argv)
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     (void) argc;
     (void) argv;
+// The global context (fixme - remove this)
+    bt_ctx_t bt_info;
+    PipeContext in_ctx;
+    PipeContext out_ctx;
+
+    memset(&bt_info, 0, sizeof(bt_ctx_t));
+    memset(&in_ctx, 0, sizeof(PipeContext));
+    memset(&out_ctx, 0, sizeof(PipeContext));
+
+    in_ctx.info = &bt_info;
+    out_ctx.info = &bt_info;
+
     // kCFSocketWriteCallBack
 
     pipe_in = PipeCreateWithNative(0, in_fd, 
@@ -3049,5 +3429,3 @@ int main(int argc, char** argv)
     DEBUGF("terminate",0);
     exit(0);
 }
-
-

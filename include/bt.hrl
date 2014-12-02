@@ -21,7 +21,7 @@
 -ifndef(BT_HRL).
 -define(BT_HRL, true).
 
--include("../include/uuid.hrl").
+-include("uuid.hrl").
 
 %% Bluetooth base uuid = ?BT_UUID(0)
 -define(BT_UUID32(N),
@@ -48,22 +48,15 @@
 
 -define(L2CAP_PSM_SDP,             16#0001).
 -define(L2CAP_PSM_RFCOMM,           16#0003).
-%% Telephony Control Specifictation / TCS Binary
--define(L2CAP_PSM_TCS_BIN,          16#0005).
-%% Telephony Control Specifictation / TCS Binary
--define(L2CAP_PSM_TCS_BIN_Cordless, 16#0007).
-%% Bluetooth Network Encapsulation Protocol
--define(L2CAP_PSM_BNEP,             16#000F).
-%% HID profile - control interface
--define(L2CAP_PSM_HIDControl,       16#0011).
-%% HID profile - interrupt interface
--define(L2CAP_PSM_HIDInterrupt,     16#0013).
-%% Audio/Video Control Transport Protocol
--define(L2CAP_PSM_AVCTP,            16#0017).
-%% Audio/Video Distribution Transport Protocol
--define(L2CAP_PSM_AVDTP,            16#0019).
-%% Unrestricted Digital Information Profile (UDI)
--define(L2CAP_PSM_UID_C_Plane,      16#001D).
+-define(L2CAP_PSM_TCS_BIN,          16#0005).  %% Telephony Control Specifictation / TCS Binary
+
+-define(L2CAP_PSM_TCS_BIN_Cordless, 16#0007).  %% Telephony Control Specifictation / TCS Binary
+-define(L2CAP_PSM_BNEP,             16#000F).  %% Bluetooth Network Encapsulation Protocol
+-define(L2CAP_PSM_HIDControl,       16#0011).  %% HID profile - control interface
+-define(L2CAP_PSM_HIDInterrupt,     16#0013).  %% HID profile - interrupt interface
+-define(L2CAP_PSM_AVCTP,            16#0017).  %% Audio/Video Control Transport Protocol
+-define(L2CAP_PSM_AVDTP,            16#0019).  %% Audio/Video Distribution Transport Protocol
+-define(L2CAP_PSM_UID_C_Plane,      16#001D).  %% Unrestricted Digital Information Profile (UDI)
 	
 %% Range 0x1001-0xFFFF dynamically assigned.
 -define(L2CAP_PSM_DynamicStart,     16#1001).

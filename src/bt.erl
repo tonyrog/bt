@@ -21,7 +21,7 @@
 
 -module(bt).
 
--export([start/0]).
+-export([start/0, stop/0]).
 -export([i/0, i/1]).
 -export([s/1, s/2]).
 -export([scan/1, scan/3]).
@@ -38,6 +38,9 @@
 
 start() ->
     application:start(bt).
+
+stop() -> %% restart=
+    bt_drv:stop().
 
 %%
 %% Dump device information
@@ -66,9 +69,11 @@ i(BtAddr) ->
 						 class]),
 	    foreach(fun({class,Value}) ->
 			    {Service,Major,Minor} = bt_drv:decode_class(Value),
-			    io:format("  major: ~p\n", [Major]),
-			    io:format("  minor: ~p\n", [Minor]),
-			    io:format("service: ~p\n", [Service]);
+			    io:format("   major: ~p\n", [Major]),
+			    io:format("   minor: ~p\n", [Minor]),
+			    io:format(" service: ~p\n", [Service]);
+		       ({name,Name}) ->
+			    io:format("  name: ~s\n", [Name]);
 		       ({What,Value}) ->
 			    io:format("  ~p: ~p\n", [What,Value])
 		    end, DevInfo),
@@ -79,10 +84,13 @@ i(BtAddr) ->
 		    io:format("  Profiles:"),
 		    foreach(
 		      fun(Service) ->
-			      As = map(fun(A1) -> bt_sdp:decode(A1) end, Service),
+			      As = map(fun(A1) -> 
+					       bt_sdp:decode(A1) 
+				       end, Service),
 			      case lists:keysearch(256, 1, As) of
 				  false -> ok;
-				  {value,{_,{text,Name}}} -> io:format(" ~s,", [Name])
+				  {value,{_,{text,Name}}} -> 
+				      io:format(" ~s,", [Name])
 			      end
 		      end, SdpInfo),
 		    io:format("\n")
@@ -126,33 +134,68 @@ s(Addr, Name) when is_list(Name) ->
 
 s_serv(Attributes=[A1|_]) when is_binary(A1) ->
     Attrs0 = map(fun(A) -> bt_sdp:decode(A) end, Attributes),
-    LanguageBase = get_language_base(Attrs0, 16#0100),
-    Name = case lists:keysearch(?ATTR_ServiceName(LanguageBase), 1, Attrs0) of
-	       false -> "Unknown";
-	       {value,{_,{text,Nm}}} -> Nm
+    LangList = [{_,_,Base}|_] = get_language_base(Attrs0, 256),
+    UUID = case lists:keysearch(?ATTR_ServiceClassIDList, 1, Attrs0) of
+	       false -> <<>>;
+	       {value,{_,{sequence,[{uuid,UUID0}|_]}}} -> UUID0
 	   end,
-    io:format("Service Name: ~s\n", [Name]),
-    Attrs = delete_attributes(Attrs0,[?ATTR_ServiceName(LanguageBase),
-				      ?ATTR_LanguageBaseAttributeIDList]),
+    %% Fixme: present ServiceName,ServiceDescription,ProviderName with language base
+    %% and delete them before printing further data.
+    ServiceNames = s_attr(?ATTR_ServiceName, LangList, Attrs0, []),
+    ServiceDescs = s_attr(?ATTR_ServiceDescription, LangList, Attrs0, []),
+    ProviderNames = s_attr(?ATTR_ProviderName, LangList, Attrs0, []),
+    
+    case ServiceNames of
+	[{_,{text,Name}}|_] -> io:format("Service Name: ~s\n", [Name]);
+	[] -> io:format("Service Name: None\n", [])
+    end,
+
+    case ServiceDescs of
+	[{_,{text,Desc}}|_] -> io:format("  Service Description: ~s\n", [Desc]);
+	[] -> ok
+    end,
+
+    case ProviderNames of
+	[{_,{text,Prov}}|_] -> io:format("  Provider Name: ~s\n", [Prov]);
+	[] -> ok
+    end,
+    Attrs1 = Attrs0 -- (ServiceNames++ServiceDescs++ProviderNames),
+    Attrs = lists:keydelete(?ATTR_LanguageBaseAttributeIDList, 1, Attrs1),
     foreach(
       fun ({ID,Value}) ->
-	      io:format("  ~s: ~s\n", [bt_sdp:attribute_to_string(ID),
-				       bt_sdp:value_to_string(Value)])
+	      AttrName = bt_sdp:attribute_to_string(ID,Base,UUID),
+	      io:format("  ~s: ~s\n", [AttrName, bt_sdp:value_to_string(Value)])
       end, Attrs).
 
-delete_attributes(Attrs, [ID | IDs]) ->
-    delete_attributes(lists:keydelete(ID, 1, Attrs), IDs);
-delete_attributes(Attrs, []) -> Attrs.
+s_attr(Attr, [{_Lang,_Env,Base}|Ls], As, Acc) ->
+    case lists:keysearch(Attr+Base, 1, As) of
+	false ->
+	    s_attr(Attr, Ls, As, Acc);
+	{value,Value} ->
+	    s_attr(Attr, Ls, As, [Value|Acc])
+    end;
+s_attr(_Attr, [], _As, Acc) ->
+    lists:reverse(Acc).
 
-get_language_base(Attrs, Default) ->
-    case lists:keysearch(?ATTR_LanguageBaseAttributeIDList, 1, Attrs) of
-	{value,{_,{sequence,[{uint16,_Lang},
-			     {uint16,_Encoding},
-			     {uint16,Base} | _]}}} ->
-	    Base;  %% FIXME return a list of Base's
-	_ -> Default
+
+get_language_base(Attrs,Default) ->
+    case get_languages(Attrs) of
+	[] -> [{25966,106,Default}];
+	Ls -> Ls
     end.
 
+get_languages(Attrs) ->
+    case lists:keysearch(?ATTR_LanguageBaseAttributeIDList, 1, Attrs) of
+	{value,{_,{sequence,Seq}}} -> get_lang3(Seq);
+	_ -> []
+    end.
+
+get_lang3([{uint16,Lang},{uint16,Encoding},{uint16,Base}|Ls]) ->
+    [{Lang,Encoding,Base} | get_lang3(Ls)];
+get_lang3([]) ->
+    [].
+
+    
 %%
 %% Decode all services on a device
 %%
@@ -245,6 +288,7 @@ scan_loop(Ref, Fun, Acc) ->
 		    {ok,Acc1}
 	    end;
 	{bt,Ref, stopped} ->
+	    bt_drv:inquiry_stop(Ref),
 	    {ok,Acc}
     end.
 
@@ -252,11 +296,19 @@ scan_loop(Ref, Fun, Acc) ->
 %% Format bluetooth address into a hex string
 %%
 format_address(A) when ?is_bt_address(A) ->
-    lists:flatten(
-      io_lib:format(
-	"~2.16.0B-"
-	"~2.16.0B-"
-	"~2.16.0B-"
-	"~2.16.0B-"
-	"~2.16.0B-"
-	"~2.16.0B", tuple_to_list(A))).
+    case os:type() of
+	{unix,darwin} ->
+	    format_address_(A, $-);
+	_ ->
+	    format_address_(A, $:)
+    end.
+		
+format_address_({A,B,C,D,E,F}, S) ->
+    [hexh(A),hexl(A),S,hexh(B),hexl(B),S,hexh(C),hexl(C),S,
+     hexh(D),hexl(D),S,hexh(E),hexl(E),S,hexh(F),hexl(F)].
+
+hexl(A) -> hex1(A band 16#f).
+hexh(A) -> hex1((A bsr 8) band 16#f).
+
+hex1(A) when A < 10 -> A+$0;
+hex1(A) -> (A-10)+$A.

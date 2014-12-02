@@ -23,6 +23,8 @@
 
 -export([getaddr/1]).
 -export([getaddr_by_name/1]).
+-export([uuid_to_string/1]).
+-export([string_to_uuid/1]).
 
 -include("../include/bt.hrl").
 %%
@@ -31,12 +33,13 @@
 %% Convert address into a bluetooth address
 %% either {A,B,C,D,E,F}
 %%    or  "AA-BB-CC-DD-EE-FF"  (hex)
+%%    or  "AA:BB:CC:DD:EE:FF"  (hex)
 %%    or  "Name" in case the name is resolve
 %%
 getaddr(Addr) when ?is_bt_address(Addr) ->
     {ok, Addr};
 getaddr(Addr) when is_list(Addr) ->
-    case string:tokens(Addr, "-") of
+    case string:tokens(Addr, ":-") of
 	[As,Bs,Cs,Ds,Es,Fs] ->
 	    Res = (catch lists:map(fun(Hx) -> erlang:list_to_integer(Hx,16) end,
 				   [As,Bs,Cs,Ds,Es,Fs])),
@@ -72,3 +75,27 @@ getaddr_by_name([A|As], Name) ->
     end;
 getaddr_by_name([], _Name) ->
     {error, einval}.
+
+%% convert uuid to string format
+uuid_to_string(UUID) when ?is_uuid(UUID) ->
+    ?UUID(TLow,TMid,THigh,Clock,Node) = UUID,
+    Fmt = 
+	io_lib:format("~8.16.0B-~4.16.0B-~4.16.0B-~4.16.0B-~12.16.0B",
+		      [TLow,TMid,THigh,Clock,Node]),
+    lists:flatten(Fmt).
+
+%% convert uuid string format to bina
+string_to_uuid([X1,X2,X3,X4,X5,X6,X7,X8,$-,
+		Y1,Y2,Y3,Y4,$-,
+		Z1,Z2,Z3,Z4,$-,
+		C1,C2,C3,C4,$-,
+		N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11,N12]) ->
+    TimeLow = erlang:list_to_integer([X1,X2,X3,X4,X5,X6,X7,X8],16),
+    TimeMid  = erlang:list_to_integer([Y1,Y2,Y3,Y4],16),
+    TimeHigh = erlang:list_to_integer([Z1,Z2,Z3,Z4],16),
+    Clock    = erlang:list_to_integer([C1,C2,C3,C4],16),
+    Node     = erlang:list_to_integer([N1,N2,N3,N4,N5,N6,N7,N8,
+				       N9,N10,N11,N12],16),
+    ?UUID(TimeLow,TimeMid,TimeHigh,Clock,Node);
+string_to_uuid(_) ->
+    erlang:error(bad_arg).

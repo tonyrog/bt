@@ -34,21 +34,29 @@
 -define(ATTR_AdditionalProtocolsDescriptorList, 16#000D).
 
 %% ATTRIBUTE
--define(ATTR_ServiceName(LanguageBase), (16#0000+(LanguageBase))).
--define(ATTR_ServiceDescription(LanguageBase), (16#0001+(LanguageBase))).
--define(ATTR_ProviderName(LanguageBase), (16#0002+(LanguageBase))).
+-define(ATTR_ServiceName,        16#0000).
+-define(ATTR_ServiceDescription, 16#0001).
+-define(ATTR_ProviderName,       16#0002).
 
 %% SDP
+-define(ATTR_SDP_VersionNumberList,    16#0200).
 -define(ATTR_SDP_ServiceDatabaseState, 16#0201).
 
 %% PAN 
 -define(ATTR_PAN_IPSubnet, 16#0200).
 
-%% Imaging Attributes
--define(ATTR_BIP_SupportedCapabilities,    16#0310).
--define(ATTR_BIP_SupportedFeatures,        16#0311).
--define(ATTR_BIP_SupportedFunctions,       16#0312).
+%% BIP
+-define(ATTR_BIP_GoepL2capPsm, 16#0200).
+-define(ATTR_BIP_SupportedCapabilities, 16#0310).
+-define(ATTR_BIP_SupportedFeatures,	16#0311).
+-define(ATTR_BIP_SupportedFunctions,	16#0312).
 -define(ATTR_BIP_TotalImagingDataCapacity, 16#0313).
+
+%% AVRCP
+-define(ATTR_ACRCP_SupportedFeatures,	16#0311).
+
+%% BPP - basic printing profile, Direct Printing(1119), ReferencePrinting(1119), 
+%% DirectPrintingReferenceObjectsService(1120),ReflectedUI(1121),PrintingStatus(1123)
 
 %% UUID Def's
 
@@ -74,6 +82,8 @@
 -define(UUID_AVDTP, <<16#0019:16>>).
 -define(UUID_CMPT,  <<16#001B:16>>).
 -define(UUID_UDI,   <<16#001D:16>>).
+-define(UUID_MCAP_CTRL, <<16#001E:16>>).
+-define(UUID_MCAP_DATA, <<16#001F:16>>).
 -define(UUID_L2CAP, <<16#0100:16>>).
 
 %% SERVICE Classes
@@ -94,7 +104,7 @@
 -define(UUID_AVRemoteControlTarget, <<16#110C:16>>).
 -define(UUID_AdvancedAudioDistribution, <<16#110D:16>>).
 -define(UUID_AVRemoteControl, <<16#110E:16>>).
--define(UUID_VideoConferencing, <<16#110F:16>>).
+-define(UUID_VideoConferencing, <<16#110F:16>>).  %% fixme RemoteControlController?
 -define(UUID_Intercom, <<16#1110:16>>).
 -define(UUID_Fax, <<16#1111:16>>).
 -define(UUID_HeadsetAudioGateway, <<16#1112:16>>).
@@ -125,8 +135,23 @@
 -define(UUID_UDI_TA, <<16#112B:16>>).
 -define(UUID_Audio_Video, <<16#112C:16>>).
 -define(UUID_SIM_Access, <<16#112D:16>>).
--define(UUID_PhonebookAccess_PCE, <<16#112E:16>>).
--define(UUID_PhonebookAccess_PSE, <<16#112F:16>>).
+-define(UUID_PhonebookAccess_PCE, <<16#112E:16>>). %% Phonebook Access Profile
+-define(UUID_PhonebookAccess_PSE, <<16#112F:16>>). %%Phonebook Access Profile
+-define(UUID_PhonebookAccess, <<16#1130:16>>). %% Phonebook Access Profile
+-define(UUID_Headset_HS, <<16#1131:16>>).           %% Headset Profile (HSP)
+-define(UUID_Message_Access_Server, <<16#1132>>).   %%	Message Access Profile (MAP)
+-define(UUID_Message_Notification_Server, <<16#1133>>).	%% Message Access Profile (MAP)
+-define(UUID_Message_Access_Profile, <<16#1134>>).  %% Message Access Profile (MAP)
+-define(UUID_GNSS, <<16#1135>>).  %% Global Navigation Satellite System Profile (GNSS)
+-define(UUID_GNSS_Server, <<16#1136>>). %%	Global Navigation Satellite System Profile (GNSS)
+-define(UUID_3D_Display, <<16#1137>>).	%% 3D Synchronization Profile (3DSP)
+-define(UUID_3D_Glasses, <<16#1138>>).	 %% 3D Synchronization Profile (3DSP)
+-define(UUID_3D_Synchronization, <<16#1139>>). %% 3D Synchronization Profile (3DSP)
+-define(UUID_MPS_Profile, <<16#113A>>). %% Multi-Profile Specification (MPS)
+-define(UUID_MPS_SC, <<16#113B>>). %% Multi-Profile Specification (MPS)
+-define(UUID_CTN_Access_Service, <<16#113C>>). %% Calendar, Task, and Notes (CTN)
+-define(UUID_CTN_Notification_Service, <<16#113D>>). %%	Calendar Tasks and Notes (CTN)
+-define(UUID_CTN_Profile, <<16#113E>>). %% Calendar Tasks and Notes (CTN) Profile
 -define(UUID_PnPInformation, <<16#1200:16>>).
 -define(UUID_GenericNetworking, <<16#1201:16>>).
 -define(UUID_GenericFileTransfer, <<16#1202:16>>).
@@ -140,6 +165,10 @@
 -define(UUID_VideoSource, <<16#1303:16>>).
 -define(UUID_VideoSink, <<16#1304:16>>).
 -define(UUID_VideoDistribution, <<16#1305:16>>).
+-define(UUID_HDP, <<16#1400:16>>).  %% Health Device Profile
+-define(UUID_HDP_Source, <<16#1401:16>>).  %% Health Device Profile (HDP)
+-define(UUID_HDP_Sink, <<16#1402:16>>).  %% Health Device Profile (HDP)
+
 -define(UUID_SyncMLServer, 
 	<<16#00000001:32,16#0000:16,16#1000:16,16#8000:16,16#0002EE000002:48>>).
 -define(UUID_SyncMLClient,

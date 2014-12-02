@@ -747,6 +747,8 @@ uuid_to_string(UUID) ->
 		?UUID_AVDTP -> "AVDTP";
 		?UUID_CMPT -> "CMPT";
 		?UUID_UDI -> "UDI";
+		?UUID_MCAP_CTRL -> "MCAP_CTRL";
+		?UUID_MCAP_DATA -> "MCAP_DATA";
 		?UUID_L2CAP -> "L2CAP";
 
 		%% SERVICE Classes
@@ -800,6 +802,22 @@ uuid_to_string(UUID) ->
 		?UUID_SIM_Access -> "SIM_Access";
 		?UUID_PhonebookAccess_PCE -> "PhonebookAccess-PCE";
 		?UUID_PhonebookAccess_PSE -> "PhonebookAccess-PSE";
+
+		?UUID_PhonebookAccess -> "PhonebookAccessProfile";
+		?UUID_Headset_HS -> "Headset Profile";
+		?UUID_Message_Access_Server -> "MessageAccessProfile";
+		?UUID_Message_Notification_Server -> "MessageNotificationServer";
+		?UUID_Message_Access_Profile -> "MessageAccessProfile";
+		?UUID_GNSS -> "GNSSProfile";
+		?UUID_GNSS_Server -> "GNSSSever";
+		?UUID_3D_Display -> "3D-Display";
+		?UUID_3D_Glasses -> "3D-Glasses";
+		?UUID_3D_Synchronization -> "3D-Synchronization";
+		?UUID_MPS_Profile -> "MPS";
+		?UUID_MPS_SC -> "MPS-SC";
+		?UUID_CTN_Access_Service -> "CTNAccessService";
+		?UUID_CTN_Notification_Service ->"CTNNotificationService";
+		?UUID_CTN_Profile -> "CTNProfile";
 		?UUID_PnPInformation -> "PnPInformation";
 		?UUID_GenericNetworking -> "GenericNetworking";
 		?UUID_GenericFileTransfer -> "GenericFileTransfer";
@@ -813,7 +831,10 @@ uuid_to_string(UUID) ->
 		?UUID_VideoSource -> "VideoSource";
 		?UUID_VideoSink -> "VideoSink";
 		?UUID_VideoDistribution -> "VideoDistribution";
-		_ -> uuid:uuid_to_string(UUID128)
+		?UUID_HDP -> "HDP";
+		?UUID_HDP_Source -> "HDP-Source";
+		?UUID_HDP_Sink ->  "HDP-Sink";
+		_ -> bt_util:uuid_to_string(UUID128)
 	    end;
 	?UUID_SyncMLServer   -> "SyncMLServer";
 	?UUID_SyncMLClient   -> "SyncMLClient";
@@ -821,7 +842,7 @@ uuid_to_string(UUID) ->
 	?UUID_SyncMLDMClient -> "SyncMLDMClient";
 	?UUID_NokiaSyncMLServer -> "NokiaSyncMLServer";
 	?UUID_NokiaObexPcSuiteServices -> "NokiaObexPcSuiteService";
-	UUID128 -> uuid:uuid_to_string(UUID128)
+	UUID128 -> bt_util:uuid_to_string(UUID128)
     end.
 
 	     
@@ -922,7 +943,7 @@ string_to_uuid(Name) when is_list(Name) ->
 	"syncmlclient" -> ?UUID_SyncMLClient;
 	"syncmldmserver" -> ?UUID_SyncMLDMServer;
 	"syncmldmclient" -> ?UUID_SyncMLDMClient;
-	_ -> uuid:string_to_uuid(Name)
+	_ -> bt_util:string_to_uuid(Name)
     end;
 string_to_uuid(Name) when is_atom(Name) ->
     string_to_uuid(atom_to_list(Name)).
@@ -951,9 +972,9 @@ string_to_attribute(Name,LanguageBase) when is_list(Name) ->
 	"additionalprotocolsdescriptorlist" -> 
 	    ?ATTR_AdditionalProtocolsDescriptorList;
 	%% 
-	"servicename"        -> ?ATTR_ServiceName(LanguageBase);
-	"servicedescription" -> ?ATTR_ServiceDescription(LanguageBase);
-	"providername"       -> ?ATTR_ProviderName(LanguageBase);
+	"servicename"        -> ?ATTR_ServiceName+LanguageBase;
+	"servicedescription" -> ?ATTR_ServiceDescription+LanguageBase;
+	"providername"       -> ?ATTR_ProviderName+LanguageBase;
 	
 	%% SDP
 	"servicedatabasestate" -> 16#0201;
@@ -983,64 +1004,100 @@ attribute_to_string(ID) ->
     attribute_to_string(ID,16#0100).
 
 attribute_to_string(ID,LanguageBase) ->
-    attribute_to_string(ID,LanguageBase, <<>>).
+    attribute_to_string(ID,LanguageBase,<<>>).
 
-attribute_to_string(ID,LanguageBase,_ServiceUUID) ->
-    case ID of
-	?ATTR_ServiceRecordHandle -> "ServiceRecordHandle";
-	?ATTR_ServiceClassIDList -> "ServiceClassIDList";
-	?ATTR_ServiceRecordState -> "ServiceRecordState";
-	?ATTR_ServiceID -> "ServiceID";
-	?ATTR_ProtocolDescriptorList -> "ProtocolDescriptorList";
-	?ATTR_BrowseGroupList -> "BrowseGroupList";
-	?ATTR_LanguageBaseAttributeIDList -> "LanguageBaseAttributeIDList";
-	?ATTR_ServiceInfoTimeToLive -> "ServiceInfoTimeToLive";
-	?ATTR_ServiceAvailability -> "ServiceAvailability";
-	?ATTR_BluetoothProfileDescriptorList ->
-	    "BluetoothProfileDescriptorList";
-	?ATTR_DocumentationURL -> "DocumentationURL";
-	?ATTR_ClientExecutableURL -> "ClientExecutableURL";
-	?ATTR_IconURL -> "IconURL";
-	?ATTR_AdditionalProtocolsDescriptorList ->
-	    "AdditionalProtocolsDescriptorList";
-
-	%% Service Discovery Server
-	%% 16#0200 -> "VersionNumberList";
-	?ATTR_SDP_ServiceDatabaseState -> "ServiceDatabaseState";
-    
-	%% Browse Group Descriptor
-	%% 16#0200 -> "GroupID";
-    
-	%% PAN
-	?ATTR_PAN_IPSubnet -> "IPSubnet";
-    
-	16#0300 -> "ServiceVersion";
-	%% FIXME: depend on Service Profile
-%%	16#0301 -> "ExternalNetwork";
-%%	16#0301 -> "Network";
-%%	16#0301 -> "SupportedDataStoresList";
-%%	16#0302 -> "FaxClass1Support";
-%%	16#0302 -> "RemoteAudioVolumeControl";
-%%	16#0303 -> "FaxClass2_0Support";
-%%	16#0303 -> "SupporterFormatsList";
-	16#0304 -> "FaxClass2Support";
-	16#0305 -> "AudioFeedbackSupport";
-	16#0306 -> "NetworkAddress";
-	16#0307 -> "WAPGateway";
-	16#0308 -> "HomepageURL";
-	16#0309 -> "WAPStackType";
-	16#030A -> "SecurityDescription";
-	16#030B -> "NetAccessType";
-	16#030C -> "MaxNetAccessRate";
-	?ATTR_BIP_SupportedCapabilities -> "SupportedCapabilities";
-	?ATTR_BIP_SupportedFeatures -> "SupportedFeatures";
-	?ATTR_BIP_SupportedFunctions -> "SupportedFunctions";
-	?ATTR_BIP_TotalImagingDataCapacity -> "TotalImagingDataCapacity";
-	_ when ID==16#0000+LanguageBase -> "ServiceName";
-	_ when ID==16#0001+LanguageBase -> "ServiceDescription";
-	_ when ID==16#0002+LanguageBase -> "ProviderName";
-	_ -> lists:flatten(io_lib:format("~4.16.0B", [ID]))
+attribute_to_string(ID,LanguageBase,UUID) ->
+    case uuid_128(UUID) of
+	?BT_UUID16(UUID16) ->
+	    case UUID16-LanguageBase of
+		16#0000 -> "ServiceName";
+		16#0001 -> "ServiceDescription";
+		16#0002 -> "ProviderName";
+		_ -> attr16(ID,<<UUID16:16>>)
+	    end;
+	UUID128 ->
+	    attr(ID, LanguageBase,UUID128)
     end.
+
+attr(ID,_LanuageBase,_UUID) ->
+    attr16_id(ID).
+    
+%%
+%% Universal Attributes
+%%
+attr16(?ATTR_ServiceRecordHandle,_UUID) -> "ServiceRecordHandle";
+attr16(?ATTR_ServiceClassIDList,_UUID) -> "ServiceClassIDList";
+attr16(?ATTR_ServiceRecordState,_UUID) -> "ServiceRecordState";
+attr16(?ATTR_ServiceID,_UUID) -> "ServiceID";
+attr16(?ATTR_ProtocolDescriptorList,_UUID) -> "ProtocolDescriptorList";
+attr16(?ATTR_BrowseGroupList,_UUID) -> "BrowseGroupList";
+attr16(?ATTR_LanguageBaseAttributeIDList,_UUID) -> "LanguageBaseAttributeIDList";
+attr16(?ATTR_ServiceInfoTimeToLive,_UUID) -> "ServiceInfoTimeToLive";
+attr16(?ATTR_ServiceAvailability,_UUID) -> "ServiceAvailability";
+attr16(?ATTR_BluetoothProfileDescriptorList,_UUID) -> "BluetoothProfileDescriptorList";
+attr16(?ATTR_DocumentationURL,_UUID) -> "DocumentationURL";
+attr16(?ATTR_ClientExecutableURL,_UUID) -> "ClientExecutableURL";
+attr16(?ATTR_IconURL,_UUID) -> "IconURL";
+attr16(?ATTR_AdditionalProtocolsDescriptorList,_UUID) ->"AdditionalProtocolsDescriptorList";
+
+attr16(16#0200, ?UUID_BrowseGroupDescriptor) -> "GroupID";
+
+%% SDP 1000
+attr16(ID,?UUID_ServiceDiscoveryServer) -> attr16_sdp(ID);
+
+%% AVRCP
+attr16(ID,?UUID_AVRemoteControlTarget) -> attr16_avrcp(ID);
+attr16(ID,?UUID_AVRemoteControl) -> attr16_avrcp(ID);
+attr16(ID,?UUID_VideoConferencing) -> attr16_avrcp(ID);
+
+%% PAN 
+attr16(ID,?UUID_PANU) -> attr16_pan(ID);
+attr16(ID,?UUID_NAP) -> attr16_pan(ID);
+attr16(ID,?UUID_GN) -> attr16_pan(ID);
+
+%% BIP 0x111B, 0x111C, 0x111D
+attr16(ID,?UUID_ImagingResponder) -> attr16_bip(ID);
+attr16(ID,?UUID_ImagingAutomaticArchive) -> attr16_bip(ID);
+attr16(ID,?UUID_ImagingReferencedObjects) -> attr16_bip(ID);
+
+attr16(ID,?UUID_PnPInformation) -> attr16_pn(ID);
+
+attr16(ID,_UUID) -> attr16_id(ID).
+    
+
+attr16_sdp(?ATTR_SDP_VersionNumberList) -> "VersionNumberList";
+attr16_sdp(?ATTR_SDP_ServiceDatabaseState) -> "ServiceDatabaseState";
+attr16_sdp(ID) -> attr16_id(ID).
+
+attr16_bip(?ATTR_BIP_GoepL2capPsm) -> "GoepL2capPsm";
+attr16_bip(?ATTR_BIP_SupportedCapabilities) -> "SupportedCapabilities";
+attr16_bip(?ATTR_BIP_SupportedFeatures) -> "SupportedFeatures";
+attr16_bip(?ATTR_BIP_SupportedFunctions) -> "SupportedFunctions";
+attr16_bip(?ATTR_BIP_TotalImagingDataCapacity) -> "TotalImagingDataCapacity";
+attr16_bip(ID) ->  attr16_id(ID).
+
+attr16_pan(16#0200) -> "IpSubnet";
+attr16_pan(16#030A) -> "SecurityDescription";
+attr16_pan(16#030B) -> "NetAccessType";
+attr16_pan(16#030C) -> "MaxNetAccessrate";
+attr16_pan(16#030D) -> "IPv4Subnet";
+attr16_pan(16#030E) -> "IPv6Subnet";
+attr16_pan(ID) -> attr16_id(ID).
+
+attr16_avrcp(16#0311) -> "SupportedFeatures";
+attr16_avrcp(ID) -> attr16_id(ID).
+    
+attr16_pn(16#0200) -> "SpecificationID";
+attr16_pn(16#0201) -> "VendorID";
+attr16_pn(16#0202) -> "ProductID";
+attr16_pn(16#0203) -> "Version";
+attr16_pn(16#0204) -> "PrimaryRecord";
+attr16_pn(16#0205) -> "VendorIDSource";
+attr16_pn(ID) ->  attr16_id(ID).
+
+%% convert to 0xABCD format
+attr16_id(ID) ->
+    "0x"++tl(integer_to_list((ID band 16#ffff) bor 16#10000, 16)).
 
 tolower([H|T]) when H>=$A, H=<$Z ->
     [(H-$A)+$a | tolower(T)];
