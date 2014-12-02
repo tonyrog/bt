@@ -2147,7 +2147,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
     int qh_next;
     (void) inRef;
 
-    DEBUGF("RFCOMM: notification", 0);
+    DEBUGF("RFCOMM: OpenNotification", 0);
     qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
     if (qh_next == lq->qt) {
 	DEBUGF("RFCOMM: listen queue full");
@@ -2256,7 +2256,7 @@ void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBl
     int qh_next;
     (void) inRef;
 
-    DEBUGF("L2CAP: notification", 0);
+    DEBUGF("L2CAP: OpenNotification", 0);
     qh_next = (lq->qh+1) % LISTEN_QUEUE_LENGTH;
     if (qh_next == lq->qt) {
 	DEBUGF("L2CAP: listen queue full", 0);
@@ -3130,8 +3130,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	insert_last(&ctx->list, listen);
 	listen->handle = ref;
+	insert_last(&ctx->list, listen);
 	goto ok;
     }
 

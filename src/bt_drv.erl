@@ -877,13 +877,13 @@ handle_call({l2cap_open, Owner, Address, Psm}, From, State) ->
 	    {reply, {error, einval}, State}
     end;
 
-handle_call({l2cap_listen, Owner, Channel}, From, State) ->
+handle_call({l2cap_listen, Owner, Psm}, From, State) ->
     case is_pid(Owner) andalso 
-	(is_channel(Channel) orelse (Channel==0)) of
+	(is_psm(Psm) orelse (Psm=:=0)) of
 	true ->
 	    CmdId = State#state.cmd_id,
 	    EvtId = State#state.evt_id,
-	    Args = [<< EvtId:32 >>,<<Channel:8>>],
+	    Args = [<< EvtId:32 >>,<<Psm:16>>],
 	    EvtRef = make_ref(),
 	    Mon = erlang:monitor(process, Owner),
 	    SList = [#subscription { ref=EvtRef,
