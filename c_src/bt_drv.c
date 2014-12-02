@@ -2,7 +2,6 @@
  * BT driver for Erlang
  *
  */
-#include <AvailabilityMacros.h>
 #include <sys/types.h>
 #include <string.h>
 #include <memory.h>
