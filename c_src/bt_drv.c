@@ -2849,8 +2849,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    free_subscription(listen);
 	    goto mem_error;
 	}
-	insert_last(&ctx->list, listen);
 	listen->handle = ref;
+	insert_last(&ctx->list, listen);
 	goto ok;
     }
 
