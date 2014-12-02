@@ -153,7 +153,7 @@ init([]) ->
 			     {uint32, 1200}},
 			    {?ATTR_ServiceAvailability,
 			     {uint8, 255}},
-			    {?ATTR_ServiceName(16#0100), {text,"SDP Server"}}
+			    {?ATTR_ServiceName+16#0100, {text,"SDP Server"}}
 			   ]},
     {ok,
      #state { rfcomm = bt_iset:from_list([{1,30}]),

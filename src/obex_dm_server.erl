@@ -63,7 +63,7 @@ sdp_info(Channel) ->
       {sequence, [{uint16, ?LANGUAGE($e,$n)}, 
 		  {uint16, ?ENCODING_UTF8}, 
 		  {uint16, Base1}]}},
-     {?ATTR_ServiceName(Base1), {text,"SyncML DM Server"}}].
+     {?ATTR_ServiceName+Base1, {text,"SyncML DM Server"}}].
 
 
 start() ->
