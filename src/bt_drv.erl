@@ -1218,7 +1218,7 @@ encode_info([]) -> [].
 encode_linfo([What | Info]) ->
     case What of
 	name    ->  [?NFO_LOCAL_NAME | encode_linfo(Info)];
-	class   ->  [?NFO_LOCAL_CLASS | encode_info(Info)];
+	class   ->  [?NFO_LOCAL_CLASS | encode_linfo(Info)];
 	address ->  [?NFO_LOCAL_ADDRESS | encode_linfo(Info)];
 	discoverable ->  [?NFO_LOCAL_DISCOVERABLE | encode_linfo(Info)];
 	power_state ->  [?NFO_LOCAL_POWER_STATE | encode_linfo(Info)]

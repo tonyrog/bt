@@ -718,6 +718,7 @@ map_fmt(_Fun, _Sep, []) ->  [].
 %% convert to full uuid
 uuid_128(<<UUID:16>>) -> ?BT_UUID16(UUID);
 uuid_128(<<UUID:32>>) -> ?BT_UUID32(UUID);
+uuid_128(<<>>) -> <<>>;
 uuid_128(UUID) when ?is_uuid(UUID) ->  UUID.
 
 %% Try convert UUID into symboic name
