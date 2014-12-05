@@ -2,6 +2,7 @@
  * BT driver for Erlang
  *
  */
+#include <AvailabilityMacros.h>
 #include <sys/types.h>
 #include <string.h>
 #include <memory.h>
@@ -17,16 +18,8 @@
 #include <IOBluetooth/objc/IOBluetoothSDPUUID.h>
 #include <IOBluetooth/objc/IOBluetoothHostController.h>
 
-#include "Pipe.h"
-#include "Data.h"
-#include "bt_lib.h"
-
-/* Cast to MacTypes */
-#define get_Float32(d, ptr) get_float32((d),(float*)(ptr))
-#define get_Float64(d, ptr) get_float64((d),(double*)(ptr))
-#define get_UInt32(d, ptr) get_uint32((d),(uint32_t*)(ptr))
-#define get_UInt16(d, ptr) get_uint16((d),(uint16_t*)(ptr))
-#define get_UInt8(d, ptr) get_uint8((d),(uint8_t*)(ptr))
+// #include "dthread.h"
+#include "ddata.h"
 
 #define CMD_PING              1
 #define CMD_RECENT_DEVICES    2
@@ -280,11 +273,9 @@ static void emit_log(int level, char* file, int line, ...)
     }
 }
 
-/* Extension to Data.h */
-
-static inline void put_date(Data* data, NSDate* date)
+static inline void put_date(ddata_t* data, NSDate* date)
 {
-    UInt8* ptr = data_alloc(data, 5);
+    UInt8* ptr = ddata_alloc(data, 5);
     NSTimeInterval at = 0;
     UInt32 secs;
 
@@ -292,28 +283,28 @@ static inline void put_date(Data* data, NSDate* date)
 	at = [date timeIntervalSince1970];
     secs = (UInt32) at;
     *ptr++ = DATE;
-    PUT_UINT32(ptr, secs);
+    DDATA_PUT_UINT32(ptr, secs);
 }
 
-static inline void put_ns_string(Data* data, NSString* str)
+static inline void put_ns_string(ddata_t* data, NSString* str)
 {
     char buffer[1024];
     if ([str getCString:buffer maxLength:1024 encoding:NSUTF8StringEncoding])
-	put_string(data, buffer);
+	ddata_put_string(data, buffer);
     else
-	put_string(data, "?");
+	ddata_put_string(data, "?");
 }
 
-static inline void put_addr(Data* data, const BluetoothDeviceAddress* addr)
+static inline void ddata_put_addr(ddata_t* data, const BluetoothDeviceAddress* addr)
 {
-    UInt8* ptr = data_alloc(data, sizeof(BluetoothDeviceAddress)+1);
+    UInt8* ptr = ddata_alloc(data, sizeof(BluetoothDeviceAddress)+1);
     *ptr++ = ADDR;
     memcpy(ptr, addr, sizeof(BluetoothDeviceAddress));
 }
 
-static inline int get_address(Data* data, BluetoothDeviceAddress* val)
+static inline int get_address(ddata_t* data, BluetoothDeviceAddress* val)
 {
-    if (data_avail(data) >= sizeof(BluetoothDeviceAddress)) {
+    if (ddata_avail(data) >= sizeof(BluetoothDeviceAddress)) {
 	memcpy(val, data->ptr, 	sizeof(BluetoothDeviceAddress));
 	data->ptr += sizeof(BluetoothDeviceAddress);
 	return 1;
@@ -646,220 +637,220 @@ static int remove_subscription(subscription_list_t* list,
 #define ERR_LONG  2
 
 /* type: 1=short-atom  2=string-long  3=both (encapsule in LIST ot TUPLE) */
-static void put_io_error(Data* data, IOReturn error, int type)
+static void ddata_put_io_error(ddata_t* data, IOReturn error, int type)
 {
     switch(error) {
     case kIOReturnSuccess:
-	if (type&1) put_atom(data, "Success");
-	if (type&2) put_string(data, "OK");
+	if (type&1) ddata_put_atom(data, "Success");
+	if (type&2) ddata_put_string(data, "OK");
 	break;
     case kIOReturnError:
-	if (type&1) put_atom(data, "Error");
-	if (type&2) put_string(data, "general error");
+	if (type&1) ddata_put_atom(data, "Error");
+	if (type&2) ddata_put_string(data, "general error");
 	break;
     case kIOReturnNoMemory:
-        if (type&1) put_atom(data, "NoMemory");
-	if (type&2) put_string(data, "can't allocate memory");
+        if (type&1) ddata_put_atom(data, "NoMemory");
+	if (type&2) ddata_put_string(data, "can't allocate memory");
 	break;
     case kIOReturnNoResources:
-	if (type&1) put_atom(data, "NoResources");
-	if (type&2) put_string(data, "resource shortage ");
+	if (type&1) ddata_put_atom(data, "NoResources");
+	if (type&2) ddata_put_string(data, "resource shortage ");
 	break;
     case kIOReturnIPCError:
-        if (type&1) put_atom(data, "IPCError");
-	if (type&2) put_string(data, "error during IPC ");
+        if (type&1) ddata_put_atom(data, "IPCError");
+	if (type&2) ddata_put_string(data, "error during IPC ");
 	break;
     case kIOReturnNoDevice:
-        if (type&1) put_atom(data, "NoDevice");
-	if (type&2) put_string(data, "no such device ");
+        if (type&1) ddata_put_atom(data, "NoDevice");
+	if (type&2) ddata_put_string(data, "no such device ");
 	break;
     case kIOReturnNotPrivileged:
-	if (type&1) put_atom(data, "NotPrivileged");
-	if (type&2) put_string(data, "privilege violation ");
+	if (type&1) ddata_put_atom(data, "NotPrivileged");
+	if (type&2) ddata_put_string(data, "privilege violation ");
 	break;
     case kIOReturnBadArgument:
-	if (type&1) put_atom(data, "BadArgument");
-	if (type&2) put_string(data, "invalid argument ");
+	if (type&1) ddata_put_atom(data, "BadArgument");
+	if (type&2) ddata_put_string(data, "invalid argument ");
 	break;
     case kIOReturnLockedRead:
-	if (type&1) put_atom(data, "LockedRead");
-	if (type&2) put_string(data, "device read locked ");
+	if (type&1) ddata_put_atom(data, "LockedRead");
+	if (type&2) ddata_put_string(data, "device read locked ");
 	break;
     case kIOReturnLockedWrite:
-	if (type&1) put_atom(data, "LockedWrite");
-	if (type&2) put_string(data, "device write locked ");
+	if (type&1) ddata_put_atom(data, "LockedWrite");
+	if (type&2) ddata_put_string(data, "device write locked ");
 	break;
     case kIOReturnExclusiveAccess:
-	if (type&1) put_atom(data, "ExclusiveAccess");
-	if (type&2) put_string(data, "exclusive access and device already open");
+	if (type&1) ddata_put_atom(data, "ExclusiveAccess");
+	if (type&2) ddata_put_string(data, "exclusive access and device already open");
 	break;
     case kIOReturnBadMessageID:
-	if (type&1) put_atom(data, "BadMessageID");
-	if (type&2) put_string(data, "sent/received messages had different msg_id");
+	if (type&1) ddata_put_atom(data, "BadMessageID");
+	if (type&2) ddata_put_string(data, "sent/received messages had different msg_id");
 	break;
     case kIOReturnUnsupported:
-	if (type&1) put_atom(data, "Unsupported");
-	if (type&2) put_string(data, "unsupported function");
+	if (type&1) ddata_put_atom(data, "Unsupported");
+	if (type&2) ddata_put_string(data, "unsupported function");
 	break;
     case kIOReturnVMError:
-	if (type&1) put_atom(data, "VMError");
-	if (type&2) put_string(data, "misc. VM failure ");
+	if (type&1) ddata_put_atom(data, "VMError");
+	if (type&2) ddata_put_string(data, "misc. VM failure ");
 	break;
     case kIOReturnInternalError:
-	if (type&1) put_atom(data, "InternalError");
-	if (type&2) put_string(data, "internal error ");
+	if (type&1) ddata_put_atom(data, "InternalError");
+	if (type&2) ddata_put_string(data, "internal error ");
 	break;
     case kIOReturnIOError:
-	if (type&1) put_atom(data, "IOError");
-	if (type&2) put_string(data, "General I/O error ");
+	if (type&1) ddata_put_atom(data, "IOError");
+	if (type&2) ddata_put_string(data, "General I/O error ");
 	break;
     case kIOReturnCannotLock:
-	if (type&1) put_atom(data, "CannotLock");
-	if (type&2) put_string(data, "can't acquire lock");
+	if (type&1) ddata_put_atom(data, "CannotLock");
+	if (type&2) ddata_put_string(data, "can't acquire lock");
 	break;
     case kIOReturnNotOpen:
-	if (type&1) put_atom(data, "NotOpen");
-	if (type&2) put_string(data, "device not open ");
+	if (type&1) ddata_put_atom(data, "NotOpen");
+	if (type&2) ddata_put_string(data, "device not open ");
 	break;
     case kIOReturnNotReadable:
-	if (type&1) put_atom(data, "NotReadable");
-	if (type&2) put_string(data, "read not supported ");
+	if (type&1) ddata_put_atom(data, "NotReadable");
+	if (type&2) ddata_put_string(data, "read not supported ");
 	break;
     case kIOReturnNotWritable:
-	if (type&1) put_atom(data, "NotWritable");
-	if (type&2) put_string(data, "write not supported");
+	if (type&1) ddata_put_atom(data, "NotWritable");
+	if (type&2) ddata_put_string(data, "write not supported");
 	break;
     case kIOReturnNotAligned:
-	if (type&1) put_atom(data, "NotAligned");
-	if (type&2) put_string(data, "alignment error");
+	if (type&1) ddata_put_atom(data, "NotAligned");
+	if (type&2) ddata_put_string(data, "alignment error");
 	break;
     case kIOReturnBadMedia:
-        if (type&1) put_atom(data, "BadMedia");
-	if (type&2) put_string(data, "Media Error");
+        if (type&1) ddata_put_atom(data, "BadMedia");
+	if (type&2) ddata_put_string(data, "Media Error");
 	break;
     case kIOReturnStillOpen:
-	if (type&1) put_atom(data, "StillOpen");
-	if (type&2) put_string(data, "device(s) still open");
+	if (type&1) ddata_put_atom(data, "StillOpen");
+	if (type&2) ddata_put_string(data, "device(s) still open");
 	break;
     case kIOReturnRLDError:
-        if (type&1) put_atom(data, "RLDError");
-	if (type&2) put_string(data, "rld failure");
+        if (type&1) ddata_put_atom(data, "RLDError");
+	if (type&2) ddata_put_string(data, "rld failure");
 	break;
     case kIOReturnDMAError:
-        if (type&1) put_atom(data, "DMAError");
-	if (type&2) put_string(data, "DMA failure");
+        if (type&1) ddata_put_atom(data, "DMAError");
+	if (type&2) ddata_put_string(data, "DMA failure");
 	break;
     case kIOReturnBusy:
-	if (type&1) put_atom(data, "Busy");
-	if (type&2) put_string(data, "Device Busy");
+	if (type&1) ddata_put_atom(data, "Busy");
+	if (type&2) ddata_put_string(data, "Device Busy");
 	break;
     case kIOReturnTimeout:
-	if (type&1) put_atom(data, "Timeout");
-	if (type&2) put_string(data, "I/O Timeout");
+	if (type&1) ddata_put_atom(data, "Timeout");
+	if (type&2) ddata_put_string(data, "I/O Timeout");
 	break;
     case kIOReturnOffline:
-	if (type&1) put_atom(data, "Offline");
-	if (type&2) put_string(data, "device offline");
+	if (type&1) ddata_put_atom(data, "Offline");
+	if (type&2) ddata_put_string(data, "device offline");
 	break;
     case kIOReturnNotReady:
-        if (type&1) put_atom(data, "NotReady");
-	if (type&2) put_string(data, "not ready");
+        if (type&1) ddata_put_atom(data, "NotReady");
+	if (type&2) ddata_put_string(data, "not ready");
 	break;
     case kIOReturnNotAttached:
-	if (type&1) put_atom(data, "NotAttached");
-	if (type&2) put_string(data, "device not attached");
+	if (type&1) ddata_put_atom(data, "NotAttached");
+	if (type&2) ddata_put_string(data, "device not attached");
 	break;
     case kIOReturnNoChannels:
-	if (type&1) put_atom(data, "NoChannels");
-	if (type&2) put_string(data, "no DMA channels left");
+	if (type&1) ddata_put_atom(data, "NoChannels");
+	if (type&2) ddata_put_string(data, "no DMA channels left");
 	break;
     case kIOReturnNoSpace:
-	if (type&1) put_atom(data, "NoSpace");
-	if (type&2) put_string(data, "no space for data");
+	if (type&1) ddata_put_atom(data, "NoSpace");
+	if (type&2) ddata_put_string(data, "no space for data");
 	break;
     case kIOReturnPortExists:
-	if (type&1) put_atom(data, "PortExists");
-	if (type&2) put_string(data, "port already exists");
+	if (type&1) ddata_put_atom(data, "PortExists");
+	if (type&2) ddata_put_string(data, "port already exists");
 	break;
     case kIOReturnCannotWire:
-	if (type&1) put_atom(data, "CannotWire");
-	if (type&2) put_string(data, "can't wire down physical memory");
+	if (type&1) ddata_put_atom(data, "CannotWire");
+	if (type&2) ddata_put_string(data, "can't wire down physical memory");
 	break;
     case kIOReturnNoInterrupt:
-	if (type&1) put_atom(data, "NoInterrupt");
-	if (type&2) put_string(data, "no interrupt attached");
+	if (type&1) ddata_put_atom(data, "NoInterrupt");
+	if (type&2) ddata_put_string(data, "no interrupt attached");
 	break;
     case kIOReturnNoFrames:
-        if (type&1) put_atom(data, "NoFrames");
-	if (type&2) put_string(data, "no DMA frames enqueued");
+        if (type&1) ddata_put_atom(data, "NoFrames");
+	if (type&2) ddata_put_string(data, "no DMA frames enqueued");
 	break;
     case kIOReturnMessageTooLarge:
-	if (type&1) put_atom(data, "MessageTooLarge");
-	if (type&2) put_string(data, "oversized msg received");
+	if (type&1) ddata_put_atom(data, "MessageTooLarge");
+	if (type&2) ddata_put_string(data, "oversized msg received");
 	break;
     case kIOReturnNotPermitted:
-	if (type&1) put_atom(data, "NotPermitted");
-	if (type&2) put_string(data, "not permitted");
+	if (type&1) ddata_put_atom(data, "NotPermitted");
+	if (type&2) ddata_put_string(data, "not permitted");
 	break;
     case kIOReturnNoPower:
-	if (type&1) put_atom(data, "NoPower");
-	if (type&2) put_string(data, "no power to device");
+	if (type&1) ddata_put_atom(data, "NoPower");
+	if (type&2) ddata_put_string(data, "no power to device");
 	break;
     case kIOReturnNoMedia:
-	if (type&1) put_atom(data, "NoMedia");
-	if (type&2) put_string(data, "media not present");
+	if (type&1) ddata_put_atom(data, "NoMedia");
+	if (type&2) ddata_put_string(data, "media not present");
 	break;
     case kIOReturnUnformattedMedia:
-	if (type&1) put_atom(data, "UnformattedMedia");
-	if (type&2) put_string(data, "media not formatted");
+	if (type&1) ddata_put_atom(data, "UnformattedMedia");
+	if (type&2) ddata_put_string(data, "media not formatted");
 	break;
     case kIOReturnUnsupportedMode:
-	if (type&1) put_atom(data, "UnsupportedMode");
-	if (type&2) put_string(data, "no such mode");
+	if (type&1) ddata_put_atom(data, "UnsupportedMode");
+	if (type&2) ddata_put_string(data, "no such mode");
 	break;
     case kIOReturnUnderrun:
-        if (type&1) put_atom(data, "Underrun");
-	if (type&2) put_string(data, "data underrun");
+        if (type&1) ddata_put_atom(data, "Underrun");
+	if (type&2) ddata_put_string(data, "data underrun");
 	break;
     case kIOReturnOverrun:
-	if (type&1) put_atom(data, "Overrun");
-	if (type&2) put_string(data, "data overrun");
+	if (type&1) ddata_put_atom(data, "Overrun");
+	if (type&2) ddata_put_string(data, "data overrun");
 	break;
     case kIOReturnDeviceError:
-	if (type&1) put_atom(data, "DeviceError");
-	if (type&2) put_string(data, "the device is not working properly!");
+	if (type&1) ddata_put_atom(data, "DeviceError");
+	if (type&2) ddata_put_string(data, "the device is not working properly!");
 	break;
     case kIOReturnNoCompletion:
-	if (type&1) put_atom(data, "NoCompletion");
-	if (type&2) put_string(data, "a completion routine is required");
+	if (type&1) ddata_put_atom(data, "NoCompletion");
+	if (type&2) ddata_put_string(data, "a completion routine is required");
 	break;
      case kIOReturnAborted:
-	 if (type&1) put_atom(data, "Aborted");
-	 if (type&2) put_string(data, "operation aborted");
+	 if (type&1) ddata_put_atom(data, "Aborted");
+	 if (type&2) ddata_put_string(data, "operation aborted");
 	break;
     case kIOReturnNoBandwidth:
-	if (type&1) put_atom(data, "NoBandwidth");
-	if (type&2) put_string(data, "bus bandwidth would be exceeded");
+	if (type&1) ddata_put_atom(data, "NoBandwidth");
+	if (type&2) ddata_put_string(data, "bus bandwidth would be exceeded");
 	break;
     case kIOReturnNotResponding:
-	if (type&1) put_atom(data, "NotResponding");
-	if (type&2) put_string(data, "device not responding");
+	if (type&1) ddata_put_atom(data, "NotResponding");
+	if (type&2) ddata_put_string(data, "device not responding");
 	break;
     case kIOReturnIsoTooOld:
-	if (type&1) put_atom(data, "IsoTooOld");
-	if (type&2) put_string(data, "isochronous I/O request for distant past!");
+	if (type&1) ddata_put_atom(data, "IsoTooOld");
+	if (type&2) ddata_put_string(data, "isochronous I/O request for distant past!");
 	break;
     case kIOReturnIsoTooNew:
-	if (type&1) put_atom(data, "IsoTooNew");
-	if (type&2) put_string(data, "isochronous I/O request for distant future");
+	if (type&1) ddata_put_atom(data, "IsoTooNew");
+	if (type&2) ddata_put_string(data, "isochronous I/O request for distant future");
 	break;
     case kIOReturnNotFound:
-	if (type&1) put_atom(data, "NotFound");
-	if (type&2) put_string(data, "data was not found");
+	if (type&1) ddata_put_atom(data, "NotFound");
+	if (type&2) ddata_put_string(data, "data was not found");
 	break;
     case kIOReturnInvalid:
-	if (type&1) put_atom(data, "Invalid");
-	if (type&2) put_string(data, "should never be seen");
+	if (type&1) ddata_put_atom(data, "Invalid");
+	if (type&2) ddata_put_string(data, "should never be seen");
 	break;
 	/* Add HCI error codes */
     default:
@@ -867,8 +858,8 @@ static void put_io_error(Data* data, IOReturn error, int type)
 	    err_get_code(error), 
 	    err_get_sub(error), 
 	    err_get_system(error));
-	if (type&1) put_atom(data, "Unknown");
-	if (type&2) put_string(data, "do not know about this error");
+	if (type&1) ddata_put_atom(data, "Unknown");
+	if (type&2) ddata_put_string(data, "do not know about this error");
 	break;
     }
 }
@@ -878,27 +869,27 @@ static void put_io_error(Data* data, IOReturn error, int type)
 void bt_ok(UInt32 cmdid)
 {
     UInt8 buf[16];
-    Data data;
+    ddata_t data;
 
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_OK);
-    put_UINT32(&data, cmdid);
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_OK);
+    ddata_put_UINT32(&data, cmdid);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 /* Send ERROR reply */
 void bt_error(UInt32 cmdid, IOReturn err)
 {
     UInt8 buf[128];
-    Data data;
+    ddata_t data;
 
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_ERROR);
-    put_UINT32(&data, cmdid);
-    put_io_error(&data, err, ERR_SHORT);
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_ERROR);
+    ddata_put_UINT32(&data, cmdid);
+    ddata_put_io_error(&data, err, ERR_SHORT);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 
@@ -907,7 +898,7 @@ void bt_error(UInt32 cmdid, IOReturn err)
  * Given array of devices reply with
  *  OK LIST ADDR <addr> ...  LIST_END
  */
-void bt_device_list(NSArray* devices, Data* data_out)
+void bt_device_list(NSArray* devices, ddata_t* data_out)
 {
     NSUInteger i, n;
 
@@ -918,16 +909,16 @@ void bt_device_list(NSArray* devices, Data* data_out)
     /* reply:8 cmdid:32 LIST ADDR <addr> ADDR <addr> LIST_END */
     DEBUGF("bt_device_list n=%d", n);
 
-    put_tag(data_out, LIST);
+    ddata_put_tag(data_out, LIST);
     for (i = 0; i < n; i++) {
 	DEBUGF("bt_device_list i=%d, n=%d", n);
 	IOBluetoothDevice* device = (IOBluetoothDevice*)
 	    [devices objectAtIndex:i];
 	const BluetoothDeviceAddress* bt_addr = [device getAddress];
-	put_addr(data_out, bt_addr);
+	ddata_put_addr(data_out, bt_addr);
 	i++;
     }
-    put_tag(data_out, LIST_END);
+    ddata_put_tag(data_out, LIST_END);
 }
 
 /*
@@ -935,7 +926,7 @@ void bt_device_list(NSArray* devices, Data* data_out)
  * Format a binary version of SDP Element
  */
 	
-int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
+int ddata_put_sdp_elem(IOBluetoothSDPDataElement* value, ddata_t* data_out, int level)
 {
     BluetoothSDPDataElementTypeDescriptor sdp_type;
     BluetoothSDPDataElementSizeDescriptor sdp_size;
@@ -946,41 +937,41 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
     byte_size = [value getSize];
     DEBUGF("    %d: sdp:tag=%d,size=%d, avail=%d",
 	   level,sdp_type<<3|(sdp_size&7),byte_size,
-	   data_avail(data_out));
+	   ddata_avail(data_out));
 
     switch(sdp_type) {
     case kBluetoothSDPDataElementTypeNil: /* only a tag byte */
-	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
+	ddata_put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	break;
     case kBluetoothSDPDataElementTypeUnsignedInt:
     case kBluetoothSDPDataElementTypeSignedInt: {
-	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
+	ddata_put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	switch(sdp_size) {
 	case 0: {
 	    NSNumber* num = [value getNumberValue];
-	    put_UINT8(data_out, num.unsignedCharValue);
+	    ddata_put_UINT8(data_out, num.unsignedCharValue);
 	    break;
 	}
 	case 1: {
 	    NSNumber* num = [value getNumberValue];
-	    put_UINT16(data_out, num.unsignedShortValue); 
+	    ddata_put_UINT16(data_out, num.unsignedShortValue); 
 	    break;
 	}
 	case 2: {
 	    NSNumber* num = [value getNumberValue];
-	    put_UINT32(data_out, num.unsignedLongValue); 
+	    ddata_put_UINT32(data_out, num.unsignedLongValue); 
 	    break;
 	}
 	case 3: {
 	    NSNumber* num = [value getNumberValue];
-	    put_UINT64(data_out, num.unsignedLongLongValue); 
+	    ddata_put_UINT64(data_out, num.unsignedLongLongValue); 
 	    break;
 	}
 	case 4: {
 	    NSData* data = [value getDataValue];
 	    NSUInteger len = [data length];
 	    const void* ptr = [data bytes];
-	    data_add(data_out, (uint8_t*)ptr, len);
+	    ddata_add(data_out, (uint8_t*)ptr, len);
 	    break;
 	}
 	default:
@@ -993,16 +984,16 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
 	IOBluetoothSDPUUID* uuid = [value getUUIDValue];
 	NSUInteger len = [uuid length];
 	const void* ptr = [uuid bytes];
-	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
+	ddata_put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
 	switch(sdp_size) {
 	case 1:
-	    data_add(data_out, (uint8_t*)ptr, len);
+	    ddata_add(data_out, (uint8_t*)ptr, len);
 	    break;
 	case 2:
-	    data_add(data_out, (uint8_t*)ptr, len);
+	    ddata_add(data_out, (uint8_t*)ptr, len);
 	    break;
 	case 4:
-	    data_add(data_out, (uint8_t*)ptr, len);
+	    ddata_add(data_out, (uint8_t*)ptr, len);
 	    break;
 	default:
 	    return -1;
@@ -1020,25 +1011,25 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
 	uint8_t* ptr;
 
 	if (size < 256) {
-	    put_UINT8(data_out, ((sdp_type<<3)|5));
-	    ptr = data_alloc(data_out, 1+size);
-	    PUT_UINT8(ptr, size); ptr += 1;
+	    ddata_put_UINT8(data_out, ((sdp_type<<3)|5));
+	    ptr = ddata_alloc(data_out, 1+size);
+	    DDATA_PUT_UINT8(ptr, size); ptr += 1;
 	    [str getBytes:(void*)ptr  maxLength:size
 	       usedLength:&ulen encoding:NSUTF8StringEncoding
 		  options:0 range:range remainingRange:NULL];
 	}
 	else if (size < 65536) {
-	    put_UINT8(data_out, ((sdp_type<<3)|6));
-	    ptr = data_alloc(data_out, 2+size);
-	    PUT_UINT16(ptr, size); ptr += 2;
+	    ddata_put_UINT8(data_out, ((sdp_type<<3)|6));
+	    ptr = ddata_alloc(data_out, 2+size);
+	    DDATA_PUT_UINT16(ptr, size); ptr += 2;
 	    [str getBytes:(void*)ptr maxLength:size
 	     usedLength:&ulen encoding:NSUTF8StringEncoding
 	     options:0 range:range remainingRange:NULL];
 	}
 	else {
-	    put_UINT8(data_out, ((sdp_type<<3)|7));
-	    ptr = data_alloc(data_out, 4+size);
-	    PUT_UINT32(ptr, size); ptr += 4;
+	    ddata_put_UINT8(data_out, ((sdp_type<<3)|7));
+	    ptr = ddata_alloc(data_out, 4+size);
+	    DDATA_PUT_UINT32(ptr, size); ptr += 4;
 	    [str getBytes:(void*)ptr maxLength:size
 	       usedLength:&ulen encoding:NSUTF8StringEncoding
 		  options:0 range:range remainingRange:NULL];
@@ -1048,8 +1039,8 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
 
     case kBluetoothSDPDataElementTypeBoolean: {
 	NSNumber* num = [value getNumberValue];
-	put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
-	put_UINT8(data_out, num.unsignedCharValue);
+	ddata_put_UINT8(data_out, ((sdp_type<<3)|(sdp_size&0x7)));
+	ddata_put_UINT8(data_out, num.unsignedCharValue);
 	break;
     }
 
@@ -1063,19 +1054,19 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
 	intptr_t patch_offset;
 
 	// always use 4 byte header so we can patch 
-	put_UINT8(data_out, ((sdp_type<<3)|(7)));
-	patch_offset = data_used(data_out);  /* keep offset */
-	put_UINT32(data_out, 0);             /* patch this later */
+	ddata_put_UINT8(data_out, ((sdp_type<<3)|(7)));
+	patch_offset = ddata_used(data_out);  /* keep offset */
+	ddata_put_UINT32(data_out, 0);             /* patch this later */
 
-	used_size = data_used(data_out);    // size before
+	used_size = ddata_used(data_out);    // size before
 	for (i = 0; i < n; i++) {
 	    IOBluetoothSDPDataElement* elem = 
 		(IOBluetoothSDPDataElement*) [array objectAtIndex:i];
-	    if (put_sdp_elem(elem, data_out, level+1) < 0)
+	    if (ddata_put_sdp_elem(elem, data_out, level+1) < 0)
 		return -1;
 	}
-	bin_size = (data_used(data_out) - used_size);  // size after
-	PUT_UINT32(data_out->base+patch_offset, bin_size);
+	bin_size = (ddata_used(data_out) - used_size);  // size after
+	DDATA_PUT_UINT32(data_out->base+patch_offset, bin_size);
 	break;
     }
     default:
@@ -1088,12 +1079,12 @@ int put_sdp_elem(IOBluetoothSDPDataElement* value, Data* data_out, int level)
  * Ouput a SDP service record
  * LIST ServiceAttributes LIST_END
  */
-void put_sdp_service(IOBluetoothSDPServiceRecord* serv, Data* data_out)
+void ddata_put_sdp_service(IOBluetoothSDPServiceRecord* serv, ddata_t* data_out)
 {
     NSDictionary* dict;
     NSNumber* key;
 
-    put_tag(data_out, LIST);
+    ddata_put_tag(data_out, LIST);
     dict = [serv attributes];
 
     for (key in dict) {
@@ -1104,22 +1095,22 @@ void put_sdp_service(IOBluetoothSDPServiceRecord* serv, Data* data_out)
 	uint8_t type;
 	IOBluetoothSDPDataElement* value = [dict objectForKey:key];
 
-	put_UINT8(data_out, BINARY);
-	patch_offset = data_used(data_out);  /* keep offset */
-	put_UINT32(data_out, 0);             /* patch this later */
+	ddata_put_UINT8(data_out, BINARY);
+	patch_offset = ddata_used(data_out);  /* keep offset */
+	ddata_put_UINT32(data_out, 0);             /* patch this later */
     
 	// FIXME: do not assume key is a number?
 	aid = key.unsignedShortValue;
 	type=((kBluetoothSDPDataElementTypeUnsignedInt << 3) | 1);
-	put_UINT8(data_out, type);
-	put_UINT16(data_out, aid);
-	DEBUGF("  type:%d id=%d avail=%d", type, aid, data_avail(data_out));
-	used_size = data_used(data_out); // size before
-	put_sdp_elem(value, data_out, 0);
-	bin_size = 3 + (data_used(data_out) - used_size);  // size after
-	PUT_UINT32(data_out->base+patch_offset, bin_size);
+	ddata_put_UINT8(data_out, type);
+	ddata_put_UINT16(data_out, aid);
+	DEBUGF("  type:%d id=%d avail=%d", type, aid, ddata_avail(data_out));
+	used_size = ddata_used(data_out); // size before
+	ddata_put_sdp_elem(value, data_out, 0);
+	bin_size = 3 + (ddata_used(data_out) - used_size);  // size after
+	DDATA_PUT_UINT32(data_out->base+patch_offset, bin_size);
     }
-    put_tag(data_out, LIST_END);
+    ddata_put_tag(data_out, LIST_END);
 }
 
 /* read a UUID from data_in
@@ -1129,18 +1120,18 @@ void put_sdp_service(IOBluetoothSDPServiceRecord* serv, Data* data_out)
  *    data_in == 16 UUID is assumed and searched
  */
 
-int get_uuid(Data* data_in, IOBluetoothSDPUUID** uuid)
+int get_uuid(ddata_t* data_in, IOBluetoothSDPUUID** uuid)
 {
-    switch(data_avail(data_in)) {
+    switch(ddata_avail(data_in)) {
     case 2: {
 	BluetoothSDPUUID16 uuid16;
-	get_UInt16(data_in, &uuid16);
+	ddata_get_uint16(data_in, &uuid16);
 	*uuid = [IOBluetoothSDPUUID uuid16:uuid16];
 	break;
     }
     case 4: {
 	BluetoothSDPUUID32 uuid32;
-	get_UInt32(data_in, &uuid32);
+	ddata_get_uint32(data_in, &uuid32);
 	*uuid = [IOBluetoothSDPUUID uuid32:uuid32];
 	break;
     }
@@ -1159,19 +1150,19 @@ int get_uuid(Data* data_in, IOBluetoothSDPUUID** uuid)
 
 
 void bt_sdp_info(IOBluetoothDevice* device, IOBluetoothSDPUUID* uuid,
-		 Data* data_out)
+		 ddata_t* data_out)
 {
     if (uuid != NULL) {
 	IOBluetoothSDPServiceRecord* serv =
 	    [device getServiceRecordForUUID:uuid];
 	if (serv != NULL)
-	    put_sdp_service(serv, data_out);
+	    ddata_put_sdp_service(serv, data_out);
 	[uuid release];
     }
     else {
 	NSArray* services;
 
-	put_tag(data_out, LIST);
+	ddata_put_tag(data_out, LIST);
 
 	services = [device services];
 	if (services != NULL) {
@@ -1182,11 +1173,11 @@ void bt_sdp_info(IOBluetoothDevice* device, IOBluetoothSDPUUID* uuid,
 	    for (i = 0; i < n; i++) {
 		IOBluetoothSDPServiceRecord* serv = [services objectAtIndex:i];
 		DEBUGF("bt_sdp_info: service %lu %p", i, serv);
-		put_sdp_service(serv, data_out);
+		ddata_put_sdp_service(serv, data_out);
 	    }
 	    DEBUGF("bt_sdp_info: %lu services done", n);
 	}
-	put_tag(data_out, LIST_END);
+	ddata_put_tag(data_out, LIST_END);
     }
 }
 
@@ -1245,24 +1236,24 @@ NSDictionary* bt_value_dict(int sdp_type, int sdp_size, void* value)
 }
 
 
-int bt_dynamic_len(Data* data_in, int sdp_size, NSUInteger* length)
+int bt_dynamic_len(ddata_t* data_in, int sdp_size, NSUInteger* length)
 {
     switch(sdp_size) {
     case 5: {
 	uint8_t len;
-	if (!get_uint8(data_in, &len)) return 0;
+	if (!ddata_get_uint8(data_in, &len)) return 0;
 	*length = (NSUInteger) len;
 	return 1;
     }
     case 6: {
 	uint16_t len;
-	if (!get_uint16(data_in, &len)) return 0;
+	if (!ddata_get_uint16(data_in, &len)) return 0;
 	*length = (NSUInteger) len;
 	return 1;
     }
     case 7: {
 	uint32_t len;
-	if (!get_uint32(data_in, &len)) return 0;
+	if (!ddata_get_uint32(data_in, &len)) return 0;
 	*length = (NSUInteger) len;
 	return 1;
     }
@@ -1284,13 +1275,13 @@ int bt_fixed_len(int sdp_size, NSUInteger* length)
 }
 
 
-NSObject* bt_get_sdp_value(Data* data_in)
+NSObject* bt_get_sdp_value(ddata_t* data_in)
 {
     uint8_t  sdp_tag;
     int  sdp_type;
     int  sdp_size;
 
-    get_uint8(data_in, &sdp_tag);
+    ddata_get_uint8(data_in, &sdp_tag);
     sdp_type = (sdp_tag >> 3);
     sdp_size = sdp_tag & 0x7;
 
@@ -1305,7 +1296,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	case 0: {
 	    uint8_t uval;
 	    int val;
-	    get_uint8(data_in, &uval);
+	    ddata_get_uint8(data_in, &uval);
 	    val = uval;
 	    value = [NSNumber numberWithInt:val];
 	    return bt_value_dict(sdp_type,1,value);
@@ -1313,7 +1304,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	case 1: {
 	    uint16_t uval;
 	    int val;
-	    if (!get_uint16(data_in, &uval)) return NULL;
+	    if (!ddata_get_uint16(data_in, &uval)) return NULL;
 	    val = uval;
 	    value = [NSNumber numberWithInt:val];
 	    return bt_value_dict(sdp_type,2,value);
@@ -1321,7 +1312,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	case 2: {
 	    uint32_t uval;
 	    int val;
-	    if (!get_uint32(data_in, &uval)) return NULL;
+	    if (!ddata_get_uint32(data_in, &uval)) return NULL;
 	    val = uval;
 	    value = [NSNumber numberWithInt:val];
 	    if (sdp_type == kBluetoothSDPDataElementTypeUnsignedInt)
@@ -1332,12 +1323,12 @@ NSObject* bt_get_sdp_value(Data* data_in)
 
 	case 3: {
 	    value = [NSData dataWithBytes:data_in->ptr length:8];
-	    data_forward(data_in, 8);
+	    ddata_forward(data_in, 8);
 	    return bt_data_dict(sdp_type,value);
 	}
 	case 4: {
 	    value = [NSData dataWithBytes:data_in->ptr length:16];
-	    data_forward(data_in, 16);
+	    ddata_forward(data_in, 16);
 	    return bt_data_dict(sdp_type,value);
 	}
 	default:
@@ -1352,7 +1343,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	if (!bt_fixed_len(sdp_size, &len)) return NULL;
 	if ((len == 8) || (len==1)) return NULL;
 	data = [NSData dataWithBytes:data_in->ptr length:len];
-	data_forward(data_in, len);
+	ddata_forward(data_in, len);
 	return (void*) data;
     }
 
@@ -1366,7 +1357,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	value = [[NSString alloc]initWithBytes:(const void*)data_in->ptr 
 		 length:len
 		 encoding:NSUTF8StringEncoding];
-	data_forward(data_in, len);
+	ddata_forward(data_in, len);
 	if (sdp_type == kBluetoothSDPDataElementTypeURL)
 	    return bt_value_dict(sdp_type, sdp_size, value);
 	else
@@ -1378,7 +1369,7 @@ NSObject* bt_get_sdp_value(Data* data_in)
 	int val;
 	void* value;
 	
-	get_uint8(data_in, &bval);
+	ddata_get_uint8(data_in, &bval);
 	val = bval;
 	value = [NSNumber numberWithInt:val];
 	return bt_value_dict(sdp_type,1,value);
@@ -1414,20 +1405,20 @@ NSObject* bt_get_sdp_value(Data* data_in)
     }
 }
 
-NSDictionary* bt_make_sdp_dict(Data* data_in)
+NSDictionary* bt_make_sdp_dict(ddata_t* data_in)
 {
     uint8_t tag;
     NSMutableDictionary* servDict;
     void* value;
 
-    if (!get_uint8(data_in, &tag) || (tag != LIST))
+    if (!ddata_get_uint8(data_in, &tag) || (tag != LIST))
 	return NULL;
     if ((servDict = [[NSMutableDictionary alloc] initWithCapacity:10]) == NULL)
 	return NULL;
     
     DEBUGF("Service add: found LIST tag", 0);
     
-    while(get_uint8(data_in, &tag)) {
+    while(ddata_get_uint8(data_in, &tag)) {
 	if (tag == LIST_END) {
 	    DEBUGF("Service add: found LIST_END tag", 0);
 	    return servDict;
@@ -1441,14 +1432,14 @@ NSDictionary* bt_make_sdp_dict(Data* data_in)
 	    NSString* key;
 	    char attr[5];
 
-	    if (!get_uint32(data_in, &bin_sz)) goto error;
+	    if (!ddata_get_uint32(data_in, &bin_sz)) goto error;
 	    DEBUGF("Service add: found BINARY size=%d", bin_sz);
-	    if (!get_uint8(data_in, &sdp_tag)) goto error;
+	    if (!ddata_get_uint8(data_in, &sdp_tag)) goto error;
 	    sdp_type = (sdp_tag >> 3);
 	    sdp_size = sdp_tag & 0x7;
 	    if (sdp_type != kBluetoothSDPDataElementTypeUnsignedInt) goto error;
 	    if (sdp_size != 1) goto error;
-	    if (!get_uint16(data_in, &attributeID)) goto error;
+	    if (!ddata_get_uint16(data_in, &attributeID)) goto error;
 
 	    /* Generate the attribute ID as Hex String Key 4 digits */
 	    snprintf(attr, 5, "%04X", attributeID);
@@ -1466,13 +1457,13 @@ error:
     return NULL;
 }
 
-void bt_local_info(Data* data_in, Data* data_out)
+void bt_local_info(ddata_t* data_in, ddata_t* data_out)
 {
-    UInt8 op_code;
+    uint8_t op_code;
 
-    put_tag(data_out, LIST);
+    ddata_put_tag(data_out, LIST);
 
-    while(get_UInt8(data_in, &op_code)) {
+    while(ddata_get_uint8(data_in, &op_code)) {
 	switch(op_code) {
 	case NFO_LOCAL_NAME: {
 	    NSString* name =
@@ -1484,7 +1475,7 @@ void bt_local_info(Data* data_in, Data* data_out)
 	case NFO_LOCAL_CLASS: {
 	    BluetoothClassOfDevice value =
 		[[IOBluetoothHostController defaultController] classOfDevice];
-	    put_uint32(data_out, value);
+	    ddata_put_uint32(data_out, value);
 	    break;
 	}
 
@@ -1493,14 +1484,14 @@ void bt_local_info(Data* data_in, Data* data_out)
 	    NSString* addrStr =
 		[[IOBluetoothHostController defaultController] addressAsString];
 	    IOBluetoothNSStringToDeviceAddress(addrStr, &addr);
-	    put_addr(data_out, &addr);
+	    ddata_put_addr(data_out, &addr);
 	    break;
 	}
 	    
 	case NFO_LOCAL_DISCOVERABLE: {
 	    // Boolean value;
 	    // if (IOBluetoothLocalDeviceGetDiscoverable(&value) == kIOReturnSuccess)
-	    put_boolean(data_out, true);
+	    ddata_put_boolean(data_out, true);
 	    break;
 	}
 
@@ -1508,30 +1499,30 @@ void bt_local_info(Data* data_in, Data* data_out)
 	    BluetoothHCIPowerState powerState =
 		[[IOBluetoothHostController defaultController] powerState];
 	    if (powerState == kBluetoothHCIPowerStateON)
-		put_atom(data_out, "on");
+		ddata_put_atom(data_out, "on");
 	    else if (powerState == kBluetoothHCIPowerStateOFF)
-		put_atom(data_out, "off");
+		ddata_put_atom(data_out, "off");
 	    else if (powerState == kBluetoothHCIPowerStateUnintialized)
-		put_atom(data_out, "unintialized");
+		ddata_put_atom(data_out, "unintialized");
 	    else 
-		put_atom(data_out, "unknown");
+		ddata_put_atom(data_out, "unknown");
 	    break;
 	}
 	default:
 	    break;
 	}
     }
-    put_tag(data_out, LIST_END);
+    ddata_put_tag(data_out, LIST_END);
 }
 
 
-void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
+void bt_device_info(IOBluetoothDevice* device, ddata_t* data_in, ddata_t* data_out)
 {
     UInt8 op_code;
 
-    put_tag(data_out, LIST);
+    ddata_put_tag(data_out, LIST);
 
-    while(get_UInt8(data_in, &op_code)) {
+    while(ddata_get_uint8(data_in, &op_code)) {
 	switch(op_code) {
 	case NFO_DEVICE_NAME: {
 	    NSString* name = [device name];
@@ -1541,32 +1532,32 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
 
 	case NFO_DEVICE_CLASS: {
 	    BluetoothClassOfDevice value = [device classOfDevice];
-	    put_uint32(data_out, value);
+	    ddata_put_uint32(data_out, value);
 	    break;
 	}
 
 	case NFO_DEVICE_CLOCK: {
 	    BluetoothClockOffset value = [device getClockOffset];
-	    put_uint16(data_out, value);
+	    ddata_put_uint16(data_out, value);
 	    break;		
 	}
 
 	case NFO_DEVICE_IS_FAVORITE: {
 	    Boolean value = [device isFavorite];
-	    put_boolean(data_out, value);
+	    ddata_put_boolean(data_out, value);
 	    break;
 	    
 	}
 
 	case NFO_DEVICE_IS_PAIRED:  {
 	    Boolean value = [device isPaired];
-	    put_boolean(data_out, value);
+	    ddata_put_boolean(data_out, value);
 	    break;
 	}
 
 	case NFO_DEVICE_IS_CONNECTED:  {
 	    Boolean value = [device isConnected];
-	    put_boolean(data_out, value);
+	    ddata_put_boolean(data_out, value);
 	    break;
 	}
 
@@ -1589,7 +1580,7 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
 	    break;
 	}
     }
-    put_tag(data_out, LIST_END);
+    ddata_put_tag(data_out, LIST_END);
 
 }
 
@@ -1617,17 +1608,17 @@ void bt_device_info(IOBluetoothDevice* device, Data* data_in, Data* data_out)
 {
     (void) sender;
     UInt8 buf[64];
-    Data data;
+    ddata_t data;
 
     DEBUGF("InquiryDelegate: started");
 
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSub->id);
-    put_atom(&data, "started");
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, mSub->id);
+    ddata_put_atom(&data, "started");
 
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 - (void) deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry*)sender 
@@ -1636,20 +1627,20 @@ device:(IOBluetoothDevice*)device
     (void) sender;
     const BluetoothDeviceAddress* bt_addr = [device getAddress];
     UInt8 buf[64];
-    Data data;
+    ddata_t data;
 
     DEBUGF("InquiryDelegate: device found");
 
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSub->id);
-    put_tag(&data, TUPLE);
-    put_atom(&data, "device");
-    put_addr(&data, bt_addr);
-    put_tag(&data, TUPLE_END);
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, mSub->id);
+    ddata_put_tag(&data, TUPLE);
+    ddata_put_atom(&data, "device");
+    ddata_put_addr(&data, bt_addr);
+    ddata_put_tag(&data, TUPLE_END);
 
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 - (void) deviceInquiryUpdatingDeviceNamesStarted:(IOBluetoothDeviceInquiry*)sender devicesRemaining:(uint32_t)devicesRemaining
@@ -1681,14 +1672,14 @@ device:(IOBluetoothDevice*)device
 
     if (!aborted) { /* no need to send event on user abort */
 	UInt8 buf[64];
-	Data data;
+	ddata_t data;
 
-	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSub->id);
-	put_atom(&data, "stopped");
-	data_send(&data, 1);
-	data_final(&data);
+	ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+	ddata_put_tag(&data, REPLY_EVENT);
+	ddata_put_UINT32(&data, mSub->id);
+	ddata_put_atom(&data, "stopped");
+	ddata_send(&data, 1);
+	ddata_final(&data);
     }
 }
 
@@ -1718,16 +1709,16 @@ device:(IOBluetoothDevice*)device
 {
     if (status == kIOReturnSuccess) {
 	UInt8 buf[265];
-	Data data;
+	ddata_t data;
 	NSString* name = [device name];
 
-	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+	ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
 	
-	put_tag(&data, REPLY_OK);
-	put_UINT32(&data, mSub->cmdid);
+	ddata_put_tag(&data, REPLY_OK);
+	ddata_put_UINT32(&data, mSub->cmdid);
 	put_ns_string(&data, name);
-	data_send(&data, 1);
-	data_final(&data);
+	ddata_send(&data, 1);
+	ddata_final(&data);
     }
     else
 	bt_error(mSub->cmdid, status);
@@ -1763,15 +1754,15 @@ device:(IOBluetoothDevice*)device
 - (void)sdpQueryComplete:(IOBluetoothDevice *)device status:(IOReturn)status
 {
     UInt8  out_buf[2048];
-    Data data_out;
+    ddata_t data_out;
 
     if (status == kIOReturnSuccess) {
-	data_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, mSub->cmdid);
+	ddata_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, mSub->cmdid);
 	bt_sdp_info(device, mUUID, &data_out);
-	data_send(&data_out, 1);
-	data_final(&data_out);
+	ddata_send(&data_out, 1);
+	ddata_final(&data_out);
     }
     else
 	bt_error(mSub->cmdid, status);
@@ -1836,19 +1827,19 @@ device:(IOBluetoothDevice*)device
 - (void)rfcommChannelData:(IOBluetoothRFCOMMChannel*)rfcommChannel data:(void *)dataPointer length:(size_t)dataLength
 {
     UInt8 buf[128];
-    Data data;
+    ddata_t data;
     (void) rfcommChannel;
 
     DEBUGF("RFCOMMChannelDelegate: Data size=%d", dataLength);
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSub->id);
-    put_tag(&data, TUPLE);
-    put_atom(&data, "data");
-    put_binary(&data, dataPointer, dataLength);
-    put_tag(&data, TUPLE_END);
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, mSub->id);
+    ddata_put_tag(&data, TUPLE);
+    ddata_put_atom(&data, "data");
+    ddata_put_binary(&data, dataPointer, dataLength);
+    ddata_put_tag(&data, TUPLE_END);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 - (void)rfcommChannelOpenComplete:(IOBluetoothRFCOMMChannel*)rfcommChannel status:(IOReturn)error
@@ -1866,13 +1857,13 @@ device:(IOBluetoothDevice*)device
     DEBUGF("RFCOMMChannelDelegate: Closed");
     if (mSub->cmdid == 0) {
 	UInt8 buf[64];
-	Data data;
-	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSub->id);
-	put_atom(&data, "closed");
-	data_send(&data, 1);
-	data_final(&data);
+	ddata_t data;
+	ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+	ddata_put_tag(&data, REPLY_EVENT);
+	ddata_put_UINT32(&data, mSub->id);
+	ddata_put_atom(&data, "closed");
+	ddata_send(&data, 1);
+	ddata_final(&data);
     }
     else {
 	bt_ok(mSub->cmdid);
@@ -1897,15 +1888,15 @@ device:(IOBluetoothDevice*)device
 
 - (void)rfcommChannelWriteComplete:(IOBluetoothRFCOMMChannel*)rfcommChannel refcon:(void*)refcon status:(IOReturn)error
 {
-    Data* out = (Data*) refcon;
+    ddata_t* out = (ddata_t*) refcon;
     UInt32 len;
     (void) error;
 
     // FIXME: handle error!
 
     DEBUGF("RFCOMMChannelDelegate: WriteComplete");
-    if ((len=data_avail(out)) == 0) {
-	data_free(out);
+    if ((len=ddata_avail(out)) == 0) {
+	ddata_free(out);
 	bt_ok(mSub->cmdid);
 	mSub->cmdid = 0;
     }
@@ -1914,12 +1905,12 @@ device:(IOBluetoothDevice*)device
 	UInt8* ptr = out->ptr;
 	IOReturn err;
 	if (len > mtu) len = mtu;
-	data_forward(out, len); /* move to next block */
+	ddata_forward(out, len); /* move to next block */
 	err = [rfcommChannel writeAsync:ptr length:len refcon:out];
 	if (err != kIOReturnSuccess) {
 	    bt_error(mSub->cmdid, err);
 	    mSub->cmdid = 0;
-	    data_free(out);
+	    ddata_free(out);
 	}
     }
 }
@@ -1957,19 +1948,19 @@ device:(IOBluetoothDevice*)device
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel*)l2capChannel data:(void *)dataPointer length:(size_t)dataLength
 {
     UInt8 buf[128];
-    Data data;
+    ddata_t data;
     (void) l2capChannel;
 
     DEBUGF("L2CAPChannelDelegate: Data size=%d", dataLength);
-    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-    put_tag(&data, REPLY_EVENT);
-    put_UINT32(&data, mSub->id);
-    put_tag(&data, TUPLE);
-    put_atom(&data, "data");
-    put_binary(&data, dataPointer, dataLength);
-    put_tag(&data, TUPLE_END);
-    data_send(&data, 1);
-    data_final(&data);
+    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, mSub->id);
+    ddata_put_tag(&data, TUPLE);
+    ddata_put_atom(&data, "data");
+    ddata_put_binary(&data, dataPointer, dataLength);
+    ddata_put_tag(&data, TUPLE_END);
+    ddata_send(&data, 1);
+    ddata_final(&data);
 }
 
 - (void)l2capChannelOpenComplete:(IOBluetoothL2CAPChannel*)l2capChannel status:(IOReturn)error
@@ -1987,14 +1978,14 @@ device:(IOBluetoothDevice*)device
     DEBUGF("L2CAPChannelDelegate: Closed this");
     if (mSub->cmdid == 0) {
 	UInt8 buf[64];
-	Data data;
+	ddata_t data;
 	    
-	data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-	put_tag(&data, REPLY_EVENT);
-	put_UINT32(&data, mSub->id);
-	put_atom(&data, "closed");
-	data_send(&data, 1);
-	data_final(&data);
+	ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+	ddata_put_tag(&data, REPLY_EVENT);
+	ddata_put_UINT32(&data, mSub->id);
+	ddata_put_atom(&data, "closed");
+	ddata_send(&data, 1);
+	ddata_final(&data);
     }
     else {
 	bt_ok(mSub->cmdid);
@@ -2010,13 +2001,13 @@ device:(IOBluetoothDevice*)device
 
 - (void)l2capChannelWriteComplete:(IOBluetoothL2CAPChannel*)l2capChannel refcon:(void*)refcon status:(IOReturn)error
 {
-    Data* out = (Data*) refcon;
+    ddata_t* out = (ddata_t*) refcon;
     UInt32 len;
     (void)error;
 
     DEBUGF("L2CAPChannelDelegate: WriteComplete");
-    if ((len=data_avail(out)) == 0) {
-	data_free(out);
+    if ((len=ddata_avail(out)) == 0) {
+	ddata_free(out);
 	bt_ok(mSub->cmdid);
 	mSub->cmdid = 0;
     }
@@ -2025,12 +2016,12 @@ device:(IOBluetoothDevice*)device
 	UInt8* ptr = out->ptr;
 	IOReturn err;
 	if (len > mtu) len = mtu;
-	data_forward(out, len); /* move to next block */
+	ddata_forward(out, len); /* move to next block */
 	err = [l2capChannel writeAsync:ptr length:len refcon:out];
 	if (err != kIOReturnSuccess) {
 	    bt_error(mSub->cmdid, err);
 	    mSub->cmdid=0;
-	    data_free(out);
+	    ddata_free(out);
 	}
     }
 }
@@ -2090,7 +2081,7 @@ void rfcomm_accept(subscription_t* listen)
 		    BluetoothRFCOMMChannelID channel_id;
 		    IOBluetoothDevice* device;
 		    UInt8 buf[64];
-		    Data data;
+		    ddata_t data;
 		    
 		    if ((device = [channel getDevice]) == NULL) {
 			DEBUGF("RFCOMM: accept no device");
@@ -2113,16 +2104,16 @@ void rfcomm_accept(subscription_t* listen)
 		    unlink_subscription(link);
 
 		    /* send EVENT id {accept,Address,Channel} */
-		    data_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
-		    put_tag(&data, REPLY_EVENT);
-		    put_UINT32(&data, s->id);
-		    put_tag(&data, TUPLE);
-		    put_atom(&data, "accept");
-		    put_addr(&data, addr);
-		    put_uint8(&data, channel_id);
-		    put_tag(&data, TUPLE_END);
-		    data_send(&data, 1);
-		    data_final(&data);
+		    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
+		    ddata_put_tag(&data, REPLY_EVENT);
+		    ddata_put_UINT32(&data, s->id);
+		    ddata_put_tag(&data, TUPLE);
+		    ddata_put_atom(&data, "accept");
+		    ddata_put_addr(&data, addr);
+		    ddata_put_uint8(&data, channel_id);
+		    ddata_put_tag(&data, TUPLE_END);
+		    ddata_send(&data, 1);
+		    ddata_final(&data);
 		    return;
 		}
 	    }
@@ -2201,7 +2192,7 @@ void l2cap_accept(subscription_t* listen)
 		    BluetoothL2CAPPSM psm;
 		    IOBluetoothDevice* device;
 		    UInt8 buf[64];
-		    Data data;
+		    ddata_t data;
 		
 		    if ((device = [channel device]) == NULL) {
 			DEBUGF("L2CAP: accept no device", 0);
@@ -2222,16 +2213,16 @@ void l2cap_accept(subscription_t* listen)
 		    unlink_subscription(link);
 
 		    /* send EVENT id {accept,Address,Psm} */
-		    data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-		    put_tag(&data, REPLY_EVENT);
-		    put_UINT32(&data, s->id);
-		    put_tag(&data, TUPLE);
-		    put_atom(&data, "accept");
-		    put_addr(&data, addr);
-		    put_uint16(&data, psm);
-		    put_tag(&data, TUPLE_END);
-		    data_send(&data, 1);
-		    data_final(&data);
+		    ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+		    ddata_put_tag(&data, REPLY_EVENT);
+		    ddata_put_UINT32(&data, s->id);
+		    ddata_put_tag(&data, TUPLE);
+		    ddata_put_atom(&data, "accept");
+		    ddata_put_addr(&data, addr);
+		    ddata_put_uint16(&data, psm);
+		    ddata_put_tag(&data, TUPLE_END);
+		    ddata_send(&data, 1);
+		    ddata_final(&data);
 		    return;
 		}
 	    }
@@ -2272,8 +2263,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
     uint32_t cmdid = 0;
     IOReturn bt_error = kIOReturnSuccess;
     uint8_t  out_buf[2048];
-    Data data_in;
-    Data data_out;
+    ddata_t data_in;
+    ddata_t data_out;
 
     // dump subscription list
     if (debug_level == DLOG_DEBUG) {
@@ -2286,29 +2277,29 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	fprintf(stderr, "}\r\n");
     }
 
-    data_init(&data_in, (UInt8*)src, src_len, 0, FALSE);
-    data_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
+    ddata_init(&data_in, (UInt8*)src, src_len, 0, FALSE);
+    ddata_init(&data_out, out_buf, sizeof(out_buf), sizeof(UInt32), FALSE);
 
-    if (!get_UInt8(&data_in, &op))
+    if (!ddata_get_uint8(&data_in, &op))
 	goto badarg;
-    if (!get_UInt32(&data_in, &cmdid))
+    if (!ddata_get_uint32(&data_in, &cmdid))
 	goto badarg;
 
     switch (op) {
     case CMD_PING: {
 	DEBUGF("CMD_PING cmdid=%d", cmdid);
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_string(&data_out, "pong");
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_string(&data_out, "pong");
 	goto reply;
     }
 
     case CMD_DEBUG: {  // <<level>>
 	DEBUGF("CMD_DEBUG cmdid=%d", cmdid);
-	if (!get_int32(&data_in, &debug_level))
+	if (!ddata_get_int32(&data_in, &debug_level))
 	    goto badarg;
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	goto reply;
     }	
 
@@ -2316,8 +2307,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	NSArray* devices = [IOBluetoothDevice pairedDevices];
 	DEBUGF("CMD_PAIRED_DEVICE cmdid=%d", cmdid);
 
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	bt_device_list(devices, &data_out);
 	[devices release];
 	goto reply;
@@ -2328,8 +2319,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_FAVORITE_DEVICE cmdid=%d", cmdid);
 
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	bt_device_list(devices, &data_out);
 	[devices release];
 	goto reply;
@@ -2340,8 +2331,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RECENT_DEVICES cmdid=%d", cmdid);
 	
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	bt_device_list(devices, &data_out);
 	[devices release];
 	goto reply;
@@ -2359,9 +2350,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	 * random (buggy, undefined?) use one at the time as
 	 * a work around 
 	 */
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (!get_UInt32(&data_in, &secs))
+	if (!ddata_get_uint32(&data_in, &secs))
 	    goto badarg;
 
 	DEBUGF("CMD_INQUIRY_START cmdid=%d id=%u secs=%u", 
@@ -2396,7 +2387,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	IOBluetoothDeviceInquiry* inquiry;
 	subscription_t* s;
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 
 	DEBUGF("CMD_INQUIRY_STOP cmdid=%d, sid=%u", cmdid, sid);
@@ -2423,7 +2414,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
-	if (get_UInt32(&data_in, &milli)) {
+	if (ddata_get_uint32(&data_in, &milli)) {
 	    opts = TRUE;
 	    if (milli == 0)
 		timeout = 0;
@@ -2434,9 +2425,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		t = ((milli*1600) / 1000);
 		timeout = t;
 	    }
-	    if (!get_boolean(&data_in, &auth))
+	    if (!ddata_get_boolean(&data_in, &auth))
 		auth = FALSE;
-	    if (data_avail(&data_in) != 0)
+	    if (ddata_avail(&data_in) != 0)
 		goto badarg;
 	}
 	if ((s = new_subscription(CONNECT,0,cmdid,NULL)) == NULL)
@@ -2467,7 +2458,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
@@ -2492,7 +2483,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
 
-	if (get_UInt32(&data_in, &milli)) {
+	if (ddata_get_uint32(&data_in, &milli)) {
 	    opts = TRUE;
 
 	    if (milli == 0)
@@ -2506,7 +2497,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    }
 	}
 
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	if ((s = new_subscription(REMOTE_NAME,0,cmdid,NULL)) == NULL)
 	    goto mem_error;
@@ -2536,16 +2527,16 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	bt_device_info(device, &data_in, &data_out);
 	goto reply;
     }
 
     case CMD_LOCAL_INFO: { /* arg = info-items */
 	DEBUGF("CMD_LOCAL_INFO cmdid=%d", cmdid);
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
 	bt_local_info(&data_in, &data_out);
 	goto reply;
     }
@@ -2562,11 +2553,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
-	n = data_avail(&data_in);
+	n = ddata_avail(&data_in);
 	DEBUGF("SERVICE_INFO: avail=%d", n);
 	if (get_uuid(&data_in, &uuid)) {
-	    put_tag(&data_out, REPLY_OK);
-	    put_UINT32(&data_out, cmdid);
+	    ddata_put_tag(&data_out, REPLY_OK);
+	    ddata_put_UINT32(&data_out, cmdid);
 	    bt_sdp_info(device, uuid, &data_out);
 	    goto reply;
 	}
@@ -2588,7 +2579,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((s = new_subscription(SDP_QUERY,0,cmdid,NULL)) == NULL)
@@ -2610,9 +2601,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_SERVICE_DEL cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	DEBUGF("SERVICE_CLOSE: id=%d", sid);
 	if ((link=find_subscription_link(&ctx->list,SDP,sid)) != NULL) {
@@ -2629,7 +2620,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_SERVICE_ADD cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 
 	if ((serviceDict = bt_make_sdp_dict(&data_in)) == NULL)
@@ -2676,9 +2667,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 			getServiceRecordHandle:&serviceRecordHandle];
 	    if (bt_error != kIOReturnSuccess)
 		goto error;
-	    put_tag(&data_out, REPLY_OK);
-	    put_UINT32(&data_out, cmdid);
-	    put_uint32(&data_out, serviceRecordHandle);
+	    ddata_put_tag(&data_out, REPLY_OK);
+	    ddata_put_UINT32(&data_out, cmdid);
+	    ddata_put_uint32(&data_out, serviceRecordHandle);
 	    goto reply;
 	}
     }
@@ -2689,9 +2680,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_SERVICE_RFCOMM cmdid=%d", cmdid);
 	
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,SDP,sid)) != NULL) { 
 	    BluetoothRFCOMMChannelID channelID;
@@ -2699,9 +2690,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		(IOBluetoothSDPServiceRecord*) s->handle;
 	    bt_error = [serviceRecord getRFCOMMChannelID:&channelID];
 	    if (bt_error == kIOReturnSuccess) {
-		put_tag(&data_out, REPLY_OK);
-		put_UINT32(&data_out, cmdid);
-		put_uint8(&data_out, channelID);
+		ddata_put_tag(&data_out, REPLY_OK);
+		ddata_put_UINT32(&data_out, cmdid);
+		ddata_put_uint8(&data_out, channelID);
 		goto reply;
 	    }
 	    goto error;
@@ -2720,15 +2711,15 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_OPEN cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
-	if(!get_UInt8(&data_in, &channel_id))
+	if(!ddata_get_uint8(&data_in, &channel_id))
 	    goto badarg;
 	if (!RFCOMM_CHANNEL_ID_IS_VALID(channel_id))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
 	    goto badarg;
@@ -2758,9 +2749,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_CLOSE cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((link = find_subscription_link(&ctx->list,RFCOMM,sid)) != NULL) {
@@ -2790,14 +2781,14 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    /* remove all waiters */
 	    while((link1=lq->wait.first) != NULL) {
 		UInt8 buf[64];
-		Data data;
+		ddata_t data;
 		
-		data_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
-		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, link1->s->id);
-		put_atom(&data, "closed");
-		data_send(&data, 1);
-		data_final(&data);
+		ddata_init(&data, buf, sizeof(buf), sizeof(UInt32), FALSE);
+		ddata_put_tag(&data, REPLY_EVENT);
+		ddata_put_UINT32(&data, link1->s->id);
+		ddata_put_atom(&data, "closed");
+		ddata_send(&data, 1);
+		ddata_final(&data);
 		unlink_subscription(link1);
 	    }
 	    unlink_subscription(link);
@@ -2815,13 +2806,13 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_LISTEN cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if(!get_UInt8(&data_in, &channel_id))
+	if(!ddata_get_uint8(&data_in, &channel_id))
 	    goto badarg;	
 	if ((channel_id != 0) && !RFCOMM_CHANNEL_ID_IS_VALID(channel_id))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((listen = new_subscription(RFCOMM_LISTEN,sid,cmdid,NULL)) == NULL)
@@ -2857,11 +2848,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_ACCEPT cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (!get_UInt32(&data_in, &listen_id))
+	if (!ddata_get_uint32(&data_in, &listen_id))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if (find_subscription(&ctx->list,RFCOMM,sid) != NULL) {
@@ -2880,9 +2871,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	insert_last(&lq->wait, s);
 	insert_last(&ctx->list, s);
 
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	data_send(&data_out, 1);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_send(&data_out, 1);
 	rfcomm_accept(listen);
 	goto done;
     }
@@ -2892,13 +2883,13 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	subscription_t* s;
 	IOBluetoothRFCOMMChannel* rfcommChannel;
 	UInt32 len;
-	Data* out;
+	ddata_t* out;
 	UInt8* ptr;
 	BluetoothRFCOMMMTU mtu;
 
 	DEBUGF("CMD_RFCOMM_SEND cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,RFCOMM,sid)) == NULL)
 	    goto badarg;
@@ -2909,12 +2900,12 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	/* we may have to retain the data while sending !!!
 	 * create a Data and pace the sending MTU wise...
 	 */
-	out = data_new(data_in.ptr, data_avail(&data_in), 0);
+	out = ddata_new(data_in.ptr, ddata_avail(&data_in), 0);
 	mtu = [rfcommChannel getMTU];
-	if ((len = data_avail(out)) > mtu)
+	if ((len = ddata_avail(out)) > mtu)
 	    len = mtu;
 	ptr = out->ptr;
-	data_forward(out, len); /* move to next block */
+	ddata_forward(out, len); /* move to next block */
 	bt_error = [rfcommChannel writeAsync:ptr length:len refcon:out];
 	if (bt_error != kIOReturnSuccess)
 	    goto error;
@@ -2930,7 +2921,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_MTU cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,RFCOMM,sid)) == NULL)
 	    goto badarg;
@@ -2938,9 +2929,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if (rfcommChannel == NULL)
 	    goto badarg;
 	mtu = [rfcommChannel getMTU];
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_uint16(&data_out, mtu);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_uint16(&data_out, mtu);
 	goto reply;
     }
 
@@ -2953,7 +2944,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_ADDRESS cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,RFCOMM,sid)) == NULL)
 	    goto badarg;
@@ -2964,9 +2955,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if ((addr = [device getAddress]) == NULL)
 	    goto badarg;
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_addr(&data_out, addr);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_addr(&data_out, addr);
 	goto reply;
     }
 
@@ -2978,15 +2969,15 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_RFCOMM_CHANNEL cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,RFCOMM,sid)) == NULL)
 	    goto badarg;
 	rfcommChannel = (IOBluetoothRFCOMMChannel*)(s->handle);
 	channel_id = [rfcommChannel getChannelID];
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_uint8(&data_out, channel_id);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_uint8(&data_out, channel_id);
 	goto reply;
     }
 
@@ -3001,13 +2992,13 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_OPEN cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if(!get_address(&data_in, &bt_addr))
 	    goto badarg;
-	if(!get_UInt16(&data_in, &psm))
+	if(!ddata_get_uint16(&data_in, &psm))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((device = [IOBluetoothDevice deviceWithAddress:&bt_addr]) == NULL)
@@ -3040,9 +3031,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_CLOSE cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 	DEBUGF("L2CAP_CLOSE: id=%d", sid);
 	if ((link = find_subscription_link(&ctx->list,L2CAP,sid)) != NULL) {
@@ -3074,14 +3065,14 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    /* remove all waiters */
 	    while((link1=lq->wait.first) != NULL) {
 		UInt8 buf[64];
-		Data data;
+		ddata_t data;
 
-		data_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
-		put_tag(&data, REPLY_EVENT);
-		put_UINT32(&data, link1->s->id);
-		put_atom(&data, "closed");
-		data_send(&data, 1);
-		data_final(&data);
+		ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), FALSE);
+		ddata_put_tag(&data, REPLY_EVENT);
+		ddata_put_UINT32(&data, link1->s->id);
+		ddata_put_atom(&data, "closed");
+		ddata_send(&data, 1);
+		ddata_final(&data);
 		unlink_subscription(link1);
 	    }
 	    unlink_subscription(link);
@@ -3099,11 +3090,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_LISTEN cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if(!get_UInt16(&data_in, &psm))
+	if(!ddata_get_uint16(&data_in, &psm))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((listen = new_subscription(L2CAP_LISTEN,sid,cmdid,NULL)) == NULL)
@@ -3134,13 +3125,13 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	subscription_t* s;
 	IOBluetoothL2CAPChannel* l2capChannel;
 	UInt32 len;
-	Data* out;
+	ddata_t* out;
 	UInt8* ptr;
 	BluetoothL2CAPMTU mtu;
 
 	DEBUGF("CMD_L2CAP_SEND cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,L2CAP,sid)) == NULL)
 	    goto badarg;
@@ -3151,12 +3142,12 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	/* we may have to retain the data while sending !!!
 	 * create a Data and pace the sending MTU wise...
 	 */
-	out = data_new(data_in.ptr, data_avail(&data_in), 0);
+	out = ddata_new(data_in.ptr, ddata_avail(&data_in), 0);
 	mtu = [l2capChannel outgoingMTU];
-	if ((len = data_avail(out)) > mtu)
+	if ((len = ddata_avail(out)) > mtu)
 	    len = mtu;
 	ptr = out->ptr;
-	data_forward(out, len); /* move to next block */
+	ddata_forward(out, len); /* move to next block */
 	bt_error = [l2capChannel writeAsync:ptr length:len refcon:out];
 	if (bt_error != kIOReturnSuccess)
 	    goto error;
@@ -3173,11 +3164,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_ACCEPT cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (!get_UInt32(&data_in, &listen_id))
+	if (!ddata_get_uint32(&data_in, &listen_id))
 	    goto badarg;
-	if (data_avail(&data_in) != 0)
+	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
 	if (find_subscription(&ctx->list,L2CAP,sid) != NULL) {
@@ -3196,9 +3187,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	insert_last(&lq->wait, s);
 	insert_last(&ctx->list, s);
 
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);	
-	data_send(&data_out, 1);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);	
+	ddata_send(&data_out, 1);
 	l2cap_accept(listen);
 	goto done;
     }
@@ -3211,7 +3202,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_MTU cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,L2CAP,sid)) == NULL)
 	    goto badarg;
@@ -3219,9 +3210,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if (l2capChannel == NULL)
 	    goto badarg;
 	mtu = [l2capChannel outgoingMTU];
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_uint16(&data_out, mtu);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_uint16(&data_out, mtu);
 	goto reply;
     }
 
@@ -3234,7 +3225,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_ADDRESS cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,L2CAP,sid)) == NULL)
 	    goto badarg;
@@ -3245,9 +3236,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if ((addr = [device getAddress]) == NULL)
 	    goto badarg;
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_addr(&data_out, addr);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_addr(&data_out, addr);
 	goto reply;
     }
 
@@ -3259,15 +3250,15 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	DEBUGF("CMD_L2CAP_PSM cmdid=%d", cmdid);
 
-	if (!get_UInt32(&data_in, &sid))
+	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
 	if ((s = find_subscription(&ctx->list,L2CAP,sid)) == NULL)
 	    goto badarg;
 	l2capChannel = (IOBluetoothL2CAPChannel*) (s->handle);
 	psm = [l2capChannel PSM];
-	put_tag(&data_out, REPLY_OK);
-	put_UINT32(&data_out, cmdid);
-	put_uint16(&data_out, psm);
+	ddata_put_tag(&data_out, REPLY_OK);
+	ddata_put_UINT32(&data_out, cmdid);
+	ddata_put_uint16(&data_out, psm);
 	goto reply;
     }
 
@@ -3281,8 +3272,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 ok:
     if (cmdid == 0)
 	goto done;
-    put_tag(&data_out, REPLY_OK);
-    put_UINT32(&data_out, cmdid);
+    ddata_put_tag(&data_out, REPLY_OK);
+    ddata_put_UINT32(&data_out, cmdid);
     goto reply;
 
 mem_error:
@@ -3298,15 +3289,44 @@ badarg:
 
 error:
 /* reset, just in case something was inserted */
-    data_reset(&data_out, sizeof(UInt32));  
-    put_tag(&data_out, REPLY_ERROR);
-    put_UINT32(&data_out, cmdid);
-    put_io_error(&data_out, bt_error, ERR_SHORT);
+    ddata_reset(&data_out, sizeof(UInt32));  
+    ddata_put_tag(&data_out, REPLY_ERROR);
+    ddata_put_UINT32(&data_out, cmdid);
+    ddata_put_io_error(&data_out, bt_error, ERR_SHORT);
 reply:
-    data_send(&data_out, 1);
+    ddata_send(&data_out, 1);
 done:
-    data_final(&data_out);
+    ddata_final(&data_out);
 }
+
+typedef CFSocketNativeHandle PipeNativeHandle;
+typedef CFSocketCallBack PipeCallBack;
+typedef CFSocketCallBackType PipeCallBackType;
+typedef CFSocketContext PipeContext;
+typedef CFSocketRef PipeRef;
+
+#define kPipeNoCallBack kCGSocketNoCallBack
+#define kPipeReadCallBack kCFSocketReadCallBack
+#define kPipeDataCallBack kCFSocketDataCallBack
+#define kPipeWriteCallBack kCFSocketWriteCallBack
+
+PipeRef PipeCreateWithNative(CFAllocatorRef allocator, 
+			     PipeNativeHandle pipe, 
+			     CFOptionFlags callBackTypes, 
+			     PipeCallBack callback, const PipeContext *context)
+{
+    return CFSocketCreateWithNative(allocator, pipe, 
+				    callBackTypes,
+				    callback,
+				    context);
+}
+
+CFRunLoopSourceRef PipeCreateRunLoopSource(CFAllocatorRef allocator, 
+					   PipeRef pipe, CFIndex order)
+{
+    return CFSocketCreateRunLoopSource(allocator, pipe, order);
+}
+
 
 /*
  * Handle input commands from Erlang (or other program)
@@ -3376,6 +3396,7 @@ closed:
     DEBUGF("eof clean-up",0);
     CFRunLoopStop(CFRunLoopGetCurrent());
 }
+
 
 
 int main(int argc, char** argv)
