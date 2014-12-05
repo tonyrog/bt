@@ -19,84 +19,9 @@
 #include <IOBluetooth/objc/IOBluetoothHostController.h>
 
 // #include "dthread.h"
+#include "dlog.h"
 #include "ddata.h"
-
-#define CMD_PING              1
-#define CMD_RECENT_DEVICES    2
-#define CMD_PAIRED_DEVICES    3
-#define CMD_FAVORITE_DEVICES  4
-#define CMD_INQUIRY_START     5
-#define CMD_INQUIRY_STOP      6
-#define CMD_REMOTE_NAME       7
-#define CMD_CONNECT           8
-#define CMD_DISCONNECT        9
-#define CMD_DEVICE_INFO      10
-#define CMD_SERVICE_INFO     11
-#define CMD_SERVICE_QUERY    12
-#define CMD_SERVICE_ADD      13
-#define CMD_SERVICE_DEL      14
-#define CMD_SERVICE_RFCOMM   15
-#define CMD_LOCAL_INFO       16
-#define CMD_DEBUG            17
-
-/* RCCOMM Channels */
-#define CMD_RFCOMM_OPEN      20
-#define CMD_RFCOMM_CLOSE     21
-#define CMD_RFCOMM_LISTEN    22
-#define CMD_RFCOMM_SEND      23
-#define CMD_RFCOMM_ACCEPT    24
-#define CMD_RFCOMM_MTU       25
-#define CMD_RFCOMM_ADDRESS   26
-#define CMD_RFCOMM_CHANNEL   27
-
-/* L2CAP */
-#define CMD_L2CAP_OPEN        30
-#define CMD_L2CAP_CLOSE       31
-#define CMD_L2CAP_LISTEN      32
-#define CMD_L2CAP_SEND        33
-#define CMD_L2CAP_ACCEPT      34
-#define CMD_L2CAP_MTU         35
-#define CMD_L2CAP_ADDRESS     36
-#define CMD_L2CAP_PSM         37
-
-/* device info codes */
-#define NFO_DEVICE_NAME             1  /* string */
-#define NFO_DEVICE_CLASS            2  /* uint32 */
-#define NFO_DEVICE_CLOCK            3  /* uint16 */
-#define NFO_DEVICE_INQUIRY          4  /* date */
-#define NFO_DEVICE_ACCESS           5  /* date */
-#define NFO_DEVICE_UPDATE           6  /* date */
-#define NFO_DEVICE_IS_FAVORITE      7  /* Boolean */
-#define NFO_DEVICE_IS_PAIRED        8  /* Boolean */
-#define NFO_DEVICE_IS_CONNECTED     9  /* Boolean */
-
-/* local info codes */
-#define NFO_LOCAL_NAME              1 /* string */
-#define NFO_LOCAL_CLASS             2  /* uint32 */
-#define NFO_LOCAL_ADDRESS           3 /* addr */
-#define NFO_LOCAL_DISCOVERABLE      4 /* Boolean */
-#define NFO_LOCAL_POWER_STATE       5 /* on | off */
-/* add more */
-
-#define REPLY_OK            1
-#define REPLY_ERROR         2
-#define REPLY_EVENT         3
-
-/* extension data types */
-#define ADDR           100  /* bluetooth address 6 bytes */
-#define DATE           101  /* uint32 seconds since 1970 unix-time */
-
-typedef enum { 
-    INQUIRY,
-    REMOTE_NAME,
-    CONNECT,
-    SDP_QUERY,
-    SDP,
-    RFCOMM,
-    RFCOMM_LISTEN,
-    L2CAP,
-    L2CAP_LISTEN
-} subscription_type_t;
+#include "bt_drv.h"
 
 //  Object structure
 // +----------+-------------------------------------------v
@@ -120,56 +45,6 @@ typedef enum {
 //              v                                 v
 //            subscriber1 !                   subscriber2 ! 
 //
-typedef struct _subscription_t
-{
-    uint32_t              ref;       // ref count
-    subscription_type_t   type;      // type of subscription
-    uint32_t              id;        // subscription id
-    uint32_t              cmdid;     // current async cmdid (if any)
-    void*                 handle;    // Bluetooth object handle
-    void*                 opaque;    // subscription data
-    struct _subscription_t* accept;  // if on accept list
-} subscription_t;
-
-typedef struct _subscription_link_t
-{
-    struct _subscription_list_t* list;
-    struct _subscription_link_t* next;
-    struct _subscription_link_t* prev;
-    subscription_t* s;
-} subscription_link_t;
-
-typedef struct _subscription_list_t
-{
-    subscription_link_t* first;
-    subscription_link_t* last;
-    size_t length;
-} subscription_list_t;
-
-#define alloc_type(type) calloc(1, sizeof(type))
-
-typedef struct _bt_ctx_t
-{
-    size_t  pbuf_len;        // number of bytes in pbuf
-    uint8_t pbuf[4];         // packet length bytes
-    const uint8_t* ptr;       // data ptr
-    size_t len;             // length of data
-    size_t remain;          // remaining bytes to read
-    uint8_t* packet;          // the data packet being built
-    subscription_list_t list;
-} bt_ctx_t;
-
-
-#define LISTEN_QUEUE_LENGTH 8  /* max connections can only be 7 ? */
-
-typedef struct {
-    bt_ctx_t* ctx;  // access to subscription list
-    int qh;
-    int qt;
-    IOBluetoothObjectRef qelem[LISTEN_QUEUE_LENGTH];
-    subscription_list_t wait;
-} listen_queue_t;
-
 
 // -----------------------------------------------------------------------
 //   Delgate classes
@@ -219,59 +94,6 @@ typedef struct {
 - (instancetype)initWithSub:(subscription_t*) s andCtx:(bt_ctx_t*) ctx;
 - (void) dealloc;
 @end
-
-
-#define DLOG_DEBUG     7
-#define DLOG_INFO      6
-#define DLOG_NOTICE    5
-#define DLOG_WARNING   4
-#define DLOG_ERROR     3
-#define DLOG_CRITICAL  2
-#define DLOG_ALERT     1
-#define DLOG_EMERGENCY 0
-#define DLOG_NONE     -1
-
-#ifndef DLOG_DEFAULT
-#define DLOG_DEFAULT DLOG_NONE
-#endif
-
-#define DLOG(level,file,line,args...) do {				\
-	if (((level) == DLOG_EMERGENCY) ||				\
-	    ((debug_level >= 0) && ((level) <= debug_level))) {		\
-	    int save_errno = errno;					\
-	    emit_log((level),(file),(line),args);			\
-	    errno = save_errno;						\
-	}								\
-    } while(0)
-
-#define DEBUGF(args...) DLOG(DLOG_DEBUG,__FILE__,__LINE__,args)
-#define INFOF(args...)  DLOG(DLOG_INFO,__FILE__,__LINE__,args)
-#define NOTICEF(args...)  DLOG(DLOG_NOTICE,__FILE__,__LINE__,args)
-#define WARNINGF(args...)  DLOG(DLOG_WARNING,__FILE__,__LINE__,args)
-#define ERRORF(args...)  DLOG(DLOG_ERROR,__FILE__,__LINE__,args)
-#define CRITICALF(args...)  DLOG(DLOG_CRITICAL,__FILE__,__LINE__,args)
-#define ALERTF(args...)  DLOG(DLOG_ALERT,__FILE__,__LINE__,args)
-#define EMERGENCYF(args...)  DLOG(DLOG_EMERGENCY,__FILE__,__LINE__,args)
-
-static int debug_level = DLOG_DEFAULT;
-
-static void emit_log(int level, char* file, int line, ...)
-{
-    va_list ap;
-    char* fmt;
-
-    if ((level == DLOG_EMERGENCY) ||
-	((debug_level >= 0) && (level <= debug_level))) {
-	int save_errno = errno;
-	va_start(ap, line);
-	fmt = va_arg(ap, char*);
-	fprintf(stderr, "%s:%d: ", file, line); 
-	vfprintf(stderr, fmt, ap);
-	fprintf(stderr, "\r\n");
-	va_end(ap);
-	errno = save_errno;
-    }
-}
 
 static inline void put_date(ddata_t* data, NSDate* date)
 {
@@ -2140,7 +1962,7 @@ void cb_rfcomm_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOB
 	return;
     }
     else {
-	lq->qelem[lq->qh] = (IOBluetoothObjectRef) channel;
+	lq->qelem[lq->qh] = channel;
 	lq->qh = qh_next;
 	[channel retain];
 	rfcomm_accept(listen);
@@ -2249,7 +2071,7 @@ void cb_l2cap_open(void * userRefCon, IOBluetoothUserNotificationRef inRef, IOBl
 	return;
     }
     else {
-	lq->qelem[lq->qh] = (IOBluetoothObjectRef) l2capChannel;
+	lq->qelem[lq->qh] = l2capChannel;
 	lq->qh = qh_next;
 	[l2capChannel retain];
 	l2cap_accept(listen);
@@ -2267,7 +2089,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
     ddata_t data_out;
 
     // dump subscription list
-    if (debug_level == DLOG_DEBUG) {
+    if (dlog_debug_level == DLOG_DEBUG) {
 	subscription_link_t* p = ctx->list.first;
 	fprintf(stderr, "ctx.list = {");
 	while(p) {
@@ -2295,9 +2117,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
     }
 
     case CMD_DEBUG: {  // <<level>>
+	int level;
 	DEBUGF("CMD_DEBUG cmdid=%d", cmdid);
-	if (!ddata_get_int32(&data_in, &debug_level))
+	if (!ddata_get_int32(&data_in, &level))
 	    goto badarg;
+	dlog_set_debug(level);
 	ddata_put_tag(&data_out, REPLY_OK);
 	ddata_put_UINT32(&data_out, cmdid);
 	goto reply;
@@ -3414,6 +3238,8 @@ int main(int argc, char** argv)
     PipeContext in_ctx;
     PipeContext out_ctx;
 
+    dlog_init();
+
     memset(&bt_info, 0, sizeof(bt_ctx_t));
     memset(&in_ctx, 0, sizeof(PipeContext));
     memset(&out_ctx, 0, sizeof(PipeContext));
@@ -3440,6 +3266,8 @@ int main(int argc, char** argv)
     CFRunLoopRun();
 
     [pool release];
+
+    dlog_finish();
     DEBUGF("terminate",0);
     exit(0);
 }
