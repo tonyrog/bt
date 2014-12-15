@@ -370,7 +370,7 @@ static void ddata_put_io_error(ddata_t* data, IOReturn error, int type)
 
 static void cleanup(subscription_t* s)
 {
-    DEBUGF("free_subscription: %s", cleanup_subscription(s));
+    DEBUGF("cleanup: %s", format_subscription(s));
     if (s->handle != NULL) {
 	switch(s->type) {
 	case INQUIRY: {
@@ -2039,7 +2039,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    bt_error = [device openConnection:delegate];
 	if (bt_error != kIOReturnSuccess) {
 	    [delegate release];
-	    free_subscription(s);
+	    release_subscription(s);
 	    goto error;
 	}
 	/* callback will do the rest */
@@ -2106,7 +2106,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    bt_error = [device remoteNameRequest:delegate];
 	if (bt_error != kIOReturnSuccess) {
 	    [delegate release];
-	    free_subscription(s);
+	    release_subscription(s);
 	    goto error;
 	}
 	/* callback will do the rest */
@@ -2185,7 +2185,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	bt_error = [device performSDPQuery:delegate];
 	if (bt_error != kIOReturnSuccess) {
 	    [delegate release];
-	    free_subscription(s);
+	    release_subscription(s);
 	    goto error;
 	}
 	goto done;
@@ -2334,7 +2334,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	}
 	else {
 	    [delegate release];
-	    free_subscription(s);
+	    release_subscription(s);
 	    goto error;
 	}
 	break;
@@ -2416,7 +2416,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    == NULL)
 	    goto mem_error;
 	if ((lq = alloc_type(listen_queue_t)) == NULL) {
-	    free_subscription(listen);
+	    release_subscription(listen);
 	    goto mem_error;
 	}
 	lq->ctx = ctx;
@@ -2429,7 +2429,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		cb_rfcomm_open, (void*) listen, channel_id,
 		kIOBluetoothUserNotificationChannelDirectionIncoming);
 	if (ref == NULL) {
-	    free_subscription(listen);
+	    release_subscription(listen);
 	    goto mem_error;
 	}
 	listen->handle = ref;
@@ -2617,7 +2617,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	}
 	else {
 	    [delegate release];
-	    free_subscription(s);
+	    release_subscription(s);
 	    goto error;
 	}
 	break;
@@ -2695,11 +2695,11 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if (ddata_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((listen = new_subscription(L2CAP_LISTEN,sid,cmdid,NULL,celanup))
+	if ((listen = new_subscription(L2CAP_LISTEN,sid,cmdid,NULL,cleanup))
 	    == NULL)
 	    goto mem_error;
 	if ((lq = alloc_type(listen_queue_t)) == NULL) {
-	    free_subscription(listen);
+	    release_subscription(listen);
 	    goto mem_error;
 	}
 	lq->ctx = ctx;
@@ -2711,7 +2711,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		cb_l2cap_open, (void*) listen, psm,
 		kIOBluetoothUserNotificationChannelDirectionIncoming);
 	if (ref == NULL) {
-	    free_subscription(listen);
+	    release_subscription(listen);
 	    goto mem_error;
 	}
 	listen->handle = ref;
