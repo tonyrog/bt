@@ -308,7 +308,7 @@ format_address_({A,B,C,D,E,F}, S) ->
      hexh(D),hexl(D),S,hexh(E),hexl(E),S,hexh(F),hexl(F)].
 
 hexl(A) -> hex1(A band 16#f).
-hexh(A) -> hex1((A bsr 8) band 16#f).
+hexh(A) -> hex1((A bsr 4) band 16#f).
 
 hex1(A) when A < 10 -> A+$0;
-hex1(A) -> (A-10)+$A.
+hex1(A) -> (A-10)+$a.
