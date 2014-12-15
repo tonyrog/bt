@@ -1,6 +1,10 @@
 #ifndef __BT_DRV_H__
 #define __BT_DRV_H__
 
+#include <stdint.h>
+
+#include "bt_sub.h"
+
 #define CMD_PING              1
 #define CMD_RECENT_DEVICES    2
 #define CMD_PAIRED_DEVICES    3
@@ -65,46 +69,6 @@
 /* extension data types */
 #define ADDR           100  /* bluetooth address 6 bytes */
 #define DATE           101  /* uint32 seconds since 1970 unix-time */
-
-typedef enum { 
-    INQUIRY,
-    REMOTE_NAME,
-    CONNECT,
-    SDP_QUERY,
-    SDP,
-    RFCOMM,
-    RFCOMM_LISTEN,
-    L2CAP,
-    L2CAP_LISTEN
-} subscription_type_t;
-
-typedef struct _subscription_t
-{
-    uint32_t              ref;       // ref count
-    subscription_type_t   type;      // type of subscription
-    uint32_t              id;        // subscription id
-    uint32_t              cmdid;     // current async cmdid (if any)
-    void*                 handle;    // Bluetooth object handle
-    void*                 opaque;    // subscription data
-    struct _subscription_t* accept;  // if on accept list
-} subscription_t;
-
-typedef struct _subscription_link_t
-{
-    struct _subscription_list_t* list;
-    struct _subscription_link_t* next;
-    struct _subscription_link_t* prev;
-    subscription_t* s;
-} subscription_link_t;
-
-typedef struct _subscription_list_t
-{
-    subscription_link_t* first;
-    subscription_link_t* last;
-    size_t length;
-} subscription_list_t;
-
-#define alloc_type(type) calloc(1, sizeof(type))
 
 typedef struct _bt_ctx_t
 {
