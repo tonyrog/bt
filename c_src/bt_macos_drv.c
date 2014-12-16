@@ -486,7 +486,18 @@ void bt_error(uint32_t cmdid, IOReturn err)
     ddata_final(&data);
 }
 
-
+// simple event
+void bt_event(uint32_t sid, const char* evtname)
+{
+    uint8_t buf[64];
+    ddata_t data;
+    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, sid);
+    ddata_put_atom(&data, evtname);
+    ddata_send(&data, 1);
+    ddata_final(&data);
+}
 
 /*
  * Given array of devices reply with
@@ -2374,18 +2385,9 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    listen_queue_t* lq = (listen_queue_t*)listen->opaque;
 	    subscription_link_t* link1;
 
-	    // move this code to free subscription ?
 	    /* remove all waiters */
 	    while((link1=lq->wait.first) != NULL) {
-		uint8_t buf[64];
-		ddata_t data;
-		
-		ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
-		ddata_put_tag(&data, REPLY_EVENT);
-		ddata_put_UINT32(&data, link1->s->id);
-		ddata_put_atom(&data, "closed");
-		ddata_send(&data, 1);
-		ddata_final(&data);
+		bt_event(link1->s->id, "closed");
 		unlink_subscription(link1);
 	    }
 	    unlink_subscription(link);

@@ -10,6 +10,7 @@
 #include <memory.h>
 #include <poll.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
@@ -18,6 +19,12 @@
 #include "dlog.h"
 #include "ddata.h"
 #include "bt_drv.h"
+
+#define RFCOMM_CHANNEL_ID_IS_VALID(x) (((x) >= 1) && ((x) <= 30))
+#define PSM_IS_VALID(x) (((x) >= 0) && ((x) <= 0xffff))
+
+#define PTR2INT(x) ((int)((long)(x)))
+#define INT2PTR(x) ((void*)((long)(x)))
 
 #define alloc_type(type) calloc(1, sizeof(type))
 
@@ -29,6 +36,38 @@ struct pollfd* poll_fds = NULL;
 event_cb_t* poll_cb = NULL;
 void** poll_data = NULL;
 
+
+int set_nonblock(int fd)
+{
+   int flags;
+#if defined(O_NONBLOCK)
+    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
+        flags = 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#else
+    flags = 1;
+    return ioctl(fd, FIOBIO, &flags);
+#endif
+}
+
+
+// change pollfd data
+int set_pollfd(int fd, short events, 
+		void (*cb)(struct pollfd* pfd,void* data), 
+		void* data)
+{
+    int j;
+    for (j = poll_n-1; j >= 0; j--) {
+	if (poll_fds[j].fd == fd) {
+	    poll_fds[j].events = events;
+	    poll_fds[j].revents = 0;
+	    poll_cb[j] = cb;
+	    poll_data[j] = data;
+	    return 0;
+	}
+    }
+    return -1;
+}
 
 
 void add_pollfd(int fd, short events, 
@@ -44,11 +83,8 @@ void add_pollfd(int fd, short events,
 	poll_sz = new_sz;
     }
     poll_fds[i].fd = fd;
-    poll_fds[i].events = events;
-    poll_fds[i].revents = 0;
-    poll_cb[i] = cb;
-    poll_data[i] = data;
     poll_n++;
+    (void) set_pollfd(fd, events, cb, data);
 }
 
 void swap_pollfd(int i, int j)
@@ -119,6 +155,98 @@ static void ddata_put_io_error(ddata_t* data, int errnum, int type)
     }
 }
 
+static void cleanup(subscription_t* s)
+{
+    DEBUGF("cleanup: %s", format_subscription(s));
+    switch(s->type) {
+    case INQUIRY: break;
+    case REMOTE_NAME: break;
+    case CONNECT: break;
+    case SDP_QUERY: break;
+    case SDP: break;
+    case RFCOMM: break;
+    case RFCOMM_LISTEN: break;
+    case L2CAP: break;
+    case L2CAP_LISTEN: break;
+    default:  // warn?
+	break;
+    }
+}
+
+/* Send OK reply */
+static void reply_ok(uint32_t cmdid)
+{
+    uint8_t buf[16];
+    ddata_t data;
+
+    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    ddata_put_tag(&data, REPLY_OK);
+    ddata_put_UINT32(&data, cmdid);
+    ddata_send(&data, 1);
+    ddata_final(&data);
+}
+
+/* Send ERROR reply */
+static void reply_error(uint32_t cmdid, int err)
+{
+    uint8_t buf[128];
+    ddata_t data;
+
+    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    ddata_put_tag(&data, REPLY_ERROR);
+    ddata_put_UINT32(&data, cmdid);
+    ddata_put_io_error(&data, err, ERR_SHORT);
+    ddata_send(&data, 1);
+    ddata_final(&data);
+}
+
+// simple event
+static void send_event(uint32_t sid, const char* evtname)
+{
+    uint8_t buf[64];
+    ddata_t data;
+    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    ddata_put_tag(&data, REPLY_EVENT);
+    ddata_put_UINT32(&data, sid);
+    ddata_put_atom(&data, evtname);
+    ddata_send(&data, 1);
+    ddata_final(&data);
+}
+
+static inline int get_address(ddata_t* data, bdaddr_t* val)
+{
+    if (ddata_avail(data) >= sizeof(bdaddr_t)) {
+	memcpy(val, data->ptr, 	sizeof(bdaddr_t));
+	data->ptr += sizeof(bdaddr_t);
+	return 1;
+    }
+    return 0;
+}
+
+static void rfcomm_running(struct pollfd* pfd, void* arg)
+{
+    subscription_t* s = arg;
+
+    if (pfd->revents & POLLIN) {  // input ready
+	DEBUGF("rfcomm_running: %d has input", PTR2INT(s->handle));
+    }
+
+    if (pfd->revents & POLLOUT) {  // output ready
+	DEBUGF("rfcomm_running: %d may output", PTR2INT(s->handle));
+    }
+}
+
+static void rfcomm_connected(struct pollfd* pfd, void* arg)
+{
+    subscription_t* s = arg;
+    (void) pfd;
+    DEBUGF("rfcomm_connected: %d", PTR2INT(s->handle));
+    reply_ok(s->cmdid);
+    // FIXME: check error
+    s->cmdid = 0;
+    set_pollfd(PTR2INT(s->handle), POLLIN, rfcomm_running, s);
+}
+
 
 void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 {
@@ -167,6 +295,104 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	goto reply;
     }	
 
+    case CMD_RFCOMM_OPEN: { /* id:32 bt-address(6) channel-id:8 */
+	uint32_t sid;
+	bdaddr_t bt_addr;
+	struct sockaddr_rc addr;
+	int bfd;
+	int r;
+	uint8_t channel_id;
+	subscription_t* s;
+
+	DEBUGF("CMD_RFCOMM_OPEN cmdid=%d", cmdid);
+
+	if (!ddata_get_uint32(&data_in, &sid))
+	    goto badarg;
+	if(!get_address(&data_in, &bt_addr))
+	    goto badarg;
+	if(!ddata_get_uint8(&data_in, &channel_id))
+	    goto badarg;
+	if (!RFCOMM_CHANNEL_ID_IS_VALID(channel_id))
+	    goto badarg;
+	if (ddata_avail(&data_in) != 0)
+	    goto badarg;
+
+	if ((bfd = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM)) < 0)
+	    goto bt_error;
+
+	addr.rc_family = AF_BLUETOOTH;
+	addr.rc_channel = channel_id;
+	bacpy(&addr.rc_bdaddr, &bt_addr);
+	if (set_nonblock(bfd) < 0) {
+	    bt_error = errno;
+	    close(bfd);
+	    goto bt_error;
+	}
+	if ((r = connect(bfd, (struct sockaddr*)&addr, sizeof(addr))) < 0) {
+	    if (errno != EINPROGRESS) {
+		bt_error = errno;
+		close(bfd);
+		goto bt_error;
+	    }
+	}
+	if ((s = new_subscription(RFCOMM,sid,cmdid,NULL,cleanup)) == NULL) {
+	    close(bfd);
+	    goto mem_error;
+	}
+	if (r < 0) // inprogress
+	    add_pollfd(bfd, POLLOUT, rfcomm_connected, s);
+	else
+	    add_pollfd(bfd, POLLIN, rfcomm_running, s);
+	s->handle = INT2PTR(bfd);
+	insert_last(&ctx->list, s);
+	break;
+    }
+
+    case CMD_RFCOMM_CLOSE: { /* arguments: id:32 */
+	uint32_t sid;
+	subscription_link_t* link;
+
+	DEBUGF("CMD_RFCOMM_CLOSE cmdid=%d", cmdid);
+
+	if (!ddata_get_uint32(&data_in, &sid))
+	    goto badarg;
+	if (ddata_avail(&data_in) != 0)
+	    goto badarg;
+
+	if ((link = find_subscription_link(&ctx->list,RFCOMM,sid)) != NULL) {
+	    subscription_t* s = link->s;
+	    int bfd;
+	    s->cmdid = cmdid;
+	    bfd = PTR2INT(s->handle);
+	    if (bfd >= 0) {
+		DEBUGF("RFCOMM_CLOSE: channel=%d", bfd);
+		close(bfd);
+		unlink_subscription(link);
+		goto done;
+	    }
+	    else if (s->accept != NULL) {
+		listen_queue_t* lq = (listen_queue_t*)((s->accept)->opaque);
+		remove_subscription(&lq->wait,RFCOMM,sid);
+		unlink_subscription(link);
+		goto ok;
+	    }
+	}
+	else if ((link = find_subscription_link(&ctx->list,RFCOMM_LISTEN,sid)) != NULL) {
+	    subscription_t* listen = link->s;
+	    listen_queue_t* lq = (listen_queue_t*)listen->opaque;
+	    subscription_link_t* link1;
+	    /* remove all waiters */
+	    while((link1=lq->wait.first) != NULL) {
+		send_event(link1->s->id, "closed");
+		unlink_subscription(link1);
+	    }
+	    unlink_subscription(link);
+	    goto ok;
+	}
+	goto error;
+    }
+
+
     default:
 	DEBUGF("CMD_UNKNOWN = %d cmdid=%d", op, cmdid);
 	goto badarg;
@@ -185,14 +411,17 @@ mem_error:
     if (cmdid == 0)
 	goto done;
     bt_error = ENOMEM;
-    goto error;
+    goto bt_error;
 
 badarg:
     if (cmdid == 0)
 	goto done;
     bt_error = EINVAL;
+    goto bt_error;
 
 error:
+    bt_error = errno;
+bt_error:
 /* reset, just in case something was inserted */
     ddata_reset(&data_out, sizeof(uint32_t));
     ddata_put_tag(&data_out, REPLY_ERROR);
