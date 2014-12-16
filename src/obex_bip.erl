@@ -129,7 +129,7 @@ sdp_info(Channel) ->
       {sequence, [{uint16, ?LANGUAGE($e,$n)}, 
 		  {uint16, ?ENCODING_UTF8}, 
 		  {uint16, Base1}]}},
-     {?ATTR_ServiceName(Base1), {text,"Imaging"}},
+     {?ATTR_ServiceName+Base1, {text,"Imaging"}},
      {?ATTR_BluetoothProfileDescriptorList,
       {sequence,[{uuid,?UUID_Imaging},
 		 {uint16, 16#0100}]}},
