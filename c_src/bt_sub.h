@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "ddata.h"
+
 typedef enum { 
     INQUIRY,
     REMOTE_NAME,
@@ -24,6 +26,7 @@ typedef struct _subscription_t
     uint32_t              cmdid;     // current async cmdid (if any)
     void*                 handle;    // Bluetooth object handle
     void*                 opaque;    // subscription data
+    ddata_t*              out;       // send buffer
     void (*cleanup)(struct _subscription_t* s); // clean up callback
     struct _subscription_t* accept;  // if on accept list
 } subscription_t;

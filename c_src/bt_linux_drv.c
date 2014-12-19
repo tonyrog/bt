@@ -19,6 +19,7 @@
 #include "dlog.h"
 #include "ddata.h"
 #include "bt_drv.h"
+#include "bt_poll.h"
 
 #define RFCOMM_CHANNEL_ID_IS_VALID(x) (((x) >= 1) && ((x) <= 30))
 #define PSM_IS_VALID(x) (((x) >= 0) && ((x) <= 0xffff))
@@ -27,14 +28,6 @@
 #define INT2PTR(x) ((void*)((long)(x)))
 
 #define alloc_type(type) calloc(1, sizeof(type))
-
-typedef void (*event_cb_t)(struct pollfd*, void*);
-
-int    poll_sz  = 0;     // allocated size 
-int    poll_n = 0;       // used len 
-struct pollfd* poll_fds = NULL;
-event_cb_t* poll_cb = NULL;
-void** poll_data = NULL;
 
 
 int set_nonblock(int fd)
@@ -50,95 +43,6 @@ int set_nonblock(int fd)
 #endif
 }
 
-
-// change pollfd data
-int set_pollfd(int fd, short events, 
-		void (*cb)(struct pollfd* pfd,void* data), 
-		void* data)
-{
-    int j;
-    for (j = poll_n-1; j >= 0; j--) {
-	if (poll_fds[j].fd == fd) {
-	    poll_fds[j].events = events;
-	    poll_fds[j].revents = 0;
-	    poll_cb[j] = cb;
-	    poll_data[j] = data;
-	    return 0;
-	}
-    }
-    return -1;
-}
-
-
-void add_pollfd(int fd, short events, 
-		void (*cb)(struct pollfd* pfd,void* data), 
-		void* data)
-{
-    int i = poll_n;
-    if (i == poll_sz) {
-	size_t new_sz = 2*poll_sz+1;
-	poll_fds  = realloc(poll_fds, new_sz*sizeof(struct pollfd));
-	poll_cb   = realloc(poll_cb, new_sz*sizeof(event_cb_t));
-	poll_data = realloc(poll_data, new_sz*sizeof(void*));
-	poll_sz = new_sz;
-    }
-    poll_fds[i].fd = fd;
-    poll_n++;
-    (void) set_pollfd(fd, events, cb, data);
-}
-
-void swap_pollfd(int i, int j)
-{
-    if (i != j) {
-	struct pollfd fds = poll_fds[i];
-	event_cb_t cb     = poll_cb[i];
-	void* data        = poll_data[i];
-
-	poll_fds[i]  = poll_fds[j];
-	poll_cb[i]   = poll_cb[j];
-	poll_data[i] = poll_data[j];
-	
-	poll_fds[j]  = fds;
-	poll_cb[j]   = cb;
-	poll_data[j] = data;
-    }
-}
-
-// find and remove the pollfd
-void del_pollfd(int fd)
-{
-    int j;
-    for (j = poll_n-1; j >= 0; j--) {
-	if (poll_fds[j].fd == fd) {
-	    swap_pollfd(j, poll_n-1);
-	    poll_n--;
-	    return;
-	}
-    }
-}
-
-int do_poll(int timeout)
-{
-    int r,r0;
-
-    r = r0 = poll(poll_fds, poll_n, timeout);
-    if (r > 0) {
-	int i = 0;
-	while((r > 0) && (i < (int)poll_n)) {
-	    if ((poll_fds[i].revents & poll_fds[i].events) != 0) {
-		int j = poll_n-1;
-		// swap i and the last item, this make the poll set less
-		// sensitive to starvation and easier to remove in the callback
-		swap_pollfd(i, j);
-		(*poll_cb[j])(&poll_fds[j], poll_data[j]);
-		r--;
-	    }
-	    else
-		i++;
-	}
-    }
-    return r0;
-}
 
 #define ERR_SHORT 1
 #define ERR_LONG  2
@@ -173,13 +77,20 @@ static void cleanup(subscription_t* s)
     }
 }
 
+// setup "standard" reply buf, with initial 32 but size 
+static void mesg_setup(ddata_t* data, uint8_t* buf, size_t size)
+{
+    ddata_init(data, buf, size, 0);
+    ddata_put_UINT32(data, 0);
+}
+
 /* Send OK reply */
 static void reply_ok(uint32_t cmdid)
 {
     uint8_t buf[16];
     ddata_t data;
 
-    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    mesg_setup(&data, buf, sizeof(buf));
     ddata_put_tag(&data, REPLY_OK);
     ddata_put_UINT32(&data, cmdid);
     ddata_send(&data, 1);
@@ -192,7 +103,7 @@ static void reply_error(uint32_t cmdid, int err)
     uint8_t buf[128];
     ddata_t data;
 
-    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+    mesg_setup(&data, buf, sizeof(buf));
     ddata_put_tag(&data, REPLY_ERROR);
     ddata_put_UINT32(&data, cmdid);
     ddata_put_io_error(&data, err, ERR_SHORT);
@@ -205,7 +116,8 @@ static void send_event(uint32_t sid, const char* evtname)
 {
     uint8_t buf[64];
     ddata_t data;
-    ddata_init(&data, buf, sizeof(buf), sizeof(uint32_t), 0);
+
+    mesg_setup(&data, buf, sizeof(buf));
     ddata_put_tag(&data, REPLY_EVENT);
     ddata_put_UINT32(&data, sid);
     ddata_put_atom(&data, evtname);
@@ -215,14 +127,15 @@ static void send_event(uint32_t sid, const char* evtname)
 
 static inline int get_address(ddata_t* data, bdaddr_t* val)
 {
-    if (ddata_avail(data) >= sizeof(bdaddr_t)) {
-	memcpy(val, data->ptr, 	sizeof(bdaddr_t));
-	data->ptr += sizeof(bdaddr_t);
+    if (ddata_r_avail(data) >= sizeof(bdaddr_t)) {
+	memcpy(val, data->rd, sizeof(bdaddr_t));
+	data->rd += sizeof(bdaddr_t);
 	return 1;
     }
     return 0;
 }
 
+// CALLBACK 
 static void rfcomm_running(struct pollfd* pfd, void* arg)
 {
     subscription_t* s = arg;
@@ -236,6 +149,7 @@ static void rfcomm_running(struct pollfd* pfd, void* arg)
     }
 }
 
+// CALLBACK 
 static void rfcomm_connected(struct pollfd* pfd, void* arg)
 {
     subscription_t* s = arg;
@@ -244,7 +158,8 @@ static void rfcomm_connected(struct pollfd* pfd, void* arg)
     reply_ok(s->cmdid);
     // FIXME: check error
     s->cmdid = 0;
-    set_pollfd(PTR2INT(s->handle), POLLIN, rfcomm_running, s);
+    bt_poll_set_cb(PTR2INT(s->handle),  rfcomm_running);
+    bt_poll_set_events(PTR2INT(s->handle), POLLIN);
 }
 
 
@@ -268,8 +183,8 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	fprintf(stderr, "}\r\n");
     }
 
-    ddata_init(&data_in, (uint8_t*)src, src_len, 0, 0);
-    ddata_init(&data_out, out_buf, sizeof(out_buf), sizeof(uint32_t), 0);
+    ddata_r_init(&data_in, (uint8_t*)src, src_len, 0);
+    mesg_setup(&data_out, out_buf, sizeof(out_buf));
 
     if (!ddata_get_uint8(&data_in, &op))
 	goto badarg;
@@ -299,7 +214,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	uint32_t sid;
 	bdaddr_t bt_addr;
 	struct sockaddr_rc addr;
-	int bfd;
+	int sock;
 	int r;
 	uint8_t channel_id;
 	subscription_t* s;
@@ -314,36 +229,36 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	if (!RFCOMM_CHANNEL_ID_IS_VALID(channel_id))
 	    goto badarg;
-	if (ddata_avail(&data_in) != 0)
+	if (ddata_r_avail(&data_in) != 0)
 	    goto badarg;
 
-	if ((bfd = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM)) < 0)
+	if ((sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM)) < 0)
 	    goto bt_error;
 
 	addr.rc_family = AF_BLUETOOTH;
 	addr.rc_channel = channel_id;
 	bacpy(&addr.rc_bdaddr, &bt_addr);
-	if (set_nonblock(bfd) < 0) {
+	if (set_nonblock(sock) < 0) {
 	    bt_error = errno;
-	    close(bfd);
+	    close(sock);
 	    goto bt_error;
 	}
-	if ((r = connect(bfd, (struct sockaddr*)&addr, sizeof(addr))) < 0) {
+	if ((r = connect(sock, (struct sockaddr*)&addr, sizeof(addr))) < 0) {
 	    if (errno != EINPROGRESS) {
 		bt_error = errno;
-		close(bfd);
+		close(sock);
 		goto bt_error;
 	    }
 	}
 	if ((s = new_subscription(RFCOMM,sid,cmdid,NULL,cleanup)) == NULL) {
-	    close(bfd);
+	    close(sock);
 	    goto mem_error;
 	}
 	if (r < 0) // inprogress
-	    add_pollfd(bfd, POLLOUT, rfcomm_connected, s);
+	    bt_poll_add(sock, POLLOUT, rfcomm_connected, s);
 	else
-	    add_pollfd(bfd, POLLIN, rfcomm_running, s);
-	s->handle = INT2PTR(bfd);
+	    bt_poll_add(sock, POLLIN, rfcomm_running, s);
+	s->handle = INT2PTR(sock);
 	insert_last(&ctx->list, s);
 	break;
     }
@@ -356,17 +271,18 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 
 	if (!ddata_get_uint32(&data_in, &sid))
 	    goto badarg;
-	if (ddata_avail(&data_in) != 0)
+	if (ddata_r_avail(&data_in) != 0)
 	    goto badarg;
 
 	if ((link = find_subscription_link(&ctx->list,RFCOMM,sid)) != NULL) {
 	    subscription_t* s = link->s;
-	    int bfd;
+	    int sock;
 	    s->cmdid = cmdid;
-	    bfd = PTR2INT(s->handle);
-	    if (bfd >= 0) {
-		DEBUGF("RFCOMM_CLOSE: channel=%d", bfd);
-		close(bfd);
+	    sock = PTR2INT(s->handle);
+	    if (sock >= 0) {
+		DEBUGF("RFCOMM_CLOSE: channel=%d", sock);
+		bt_poll_del(sock);
+		close(sock);
 		unlink_subscription(link);
 		goto done;
 	    }
@@ -390,6 +306,47 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto ok;
 	}
 	goto error;
+    }
+
+
+    case CMD_RFCOMM_SEND: { /* id:32, data/rest */
+	uint32_t sid;
+	subscription_t* s;
+	int r;
+	int sock;
+
+	DEBUGF("CMD_RFCOMM_SEND cmdid=%d", cmdid);
+
+	if (!ddata_get_uint32(&data_in, &sid))
+	    goto badarg;
+	if ((s = find_subscription(&ctx->list,RFCOMM,sid)) == NULL)
+	    goto badarg;
+	if ((sock = PTR2INT(s->handle)) < 0)
+	    goto badarg;
+	s->cmdid = cmdid;
+
+	if (s->out == NULL)
+	    s->out = ddata_new(data_in.rd, ddata_r_avail(&data_in));
+	else
+	    ddata_add(s->out, data_in.rd, ddata_r_avail(&data_in));
+	// try write
+	r = write(sock, s->out->rd, ddata_r_avail(s->out));
+	if ((r >= 0) || ((r < 0) && (errno == EINPROGRESS))) {
+	    if (r < 0) r = 0;
+	    s->out->rd += r;
+	    if (ddata_w_avail(s->out) > 0)
+		bt_poll_set_events(PTR2INT(s->handle), POLLIN|POLLOUT);
+	    else {
+		ddata_reset(s->out);
+	        s->cmdid = 0;
+		goto ok;
+	    }
+	}
+	else {
+	    s->cmdid = 0;
+	    goto error;
+	}
+	goto done;
     }
 
 
@@ -423,7 +380,8 @@ error:
     bt_error = errno;
 bt_error:
 /* reset, just in case something was inserted */
-    ddata_reset(&data_out, sizeof(uint32_t));
+    ddata_reset(&data_out);
+    ddata_put_UINT32(&data_out, 0);
     ddata_put_tag(&data_out, REPLY_ERROR);
     ddata_put_UINT32(&data_out, cmdid);
     ddata_put_io_error(&data_out, bt_error, ERR_SHORT);
@@ -433,7 +391,7 @@ done:
     ddata_final(&data_out);
 }
 
-
+// CALLBACK 
 void read_callback(struct pollfd* pfd, void* data)
 {
     bt_ctx_t* ctx = (bt_ctx_t*) data;
@@ -498,7 +456,7 @@ static void  main_loop(bt_ctx_t* ctx)
     (void) ctx;
     
     while(1) {
-	int r = do_poll(-1);
+	int r = bt_poll(-1);
 	if (r < 0) {
 	    DEBUGF("poll error %s", strerror(errno));
 	}
@@ -512,9 +470,10 @@ int main(int argc, char** argv)
     (void) argv;
 
     dlog_init();
+    dlog_set_debug(DLOG_DEFAULT);
     memset(&bt_info, 0, sizeof(bt_ctx_t));
 
-    add_pollfd(0, POLLIN, read_callback, &bt_info);
+    bt_poll_add(0, POLLIN, read_callback, &bt_info);
     main_loop(&bt_info);
 
     dlog_finish();
