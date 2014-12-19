@@ -23,9 +23,12 @@
 
 -export([start/0, stop/0]).
 -export([i/0, i/1]).
+-export([li/0]).
 -export([s/1, s/2]).
+-export([debug/0, debug/1]).
 -export([scan/1, scan/3]).
 -export([getaddr/1, getaddr_by_name/1]).
+-export([format_address/1]).
 -export([service_info/1, service_info/2]).
 -export([rfcomm_channel/2]).
 -export([decode_service/1]).
@@ -41,6 +44,17 @@ start() ->
 
 stop() -> %% restart=
     bt_drv:stop().
+
+
+debug() ->
+    bt_drv:debug(debug).
+
+debug(true) ->
+    bt_drv:debug(debug);
+debug(false) ->
+    bt_drv:debug(none);
+debug(Level) ->
+    bt_drv:debug(Level).
 
 %%
 %% Dump device information
@@ -94,8 +108,33 @@ i(BtAddr) ->
 			      end
 		      end, SdpInfo),
 		    io:format("\n")
-	    end
+	    end;
+	Error -> Error
     end.
+
+%%
+%% Dump information about the local bluetooth adapter
+%%
+li() ->
+    case bt_drv:local_info([name,class,address,discoverable,power_state]) of
+	{ok,Info} ->
+	    io:format("Local Adapter:\n",[]),
+	    foreach(fun({class,Value}) ->
+			    {Service,Major,Minor} = bt_drv:decode_class(Value),
+			    io:format("   major: ~p\n", [Major]),
+			    io:format("   minor: ~p\n", [Minor]),
+			    io:format(" service: ~p\n", [Service]);
+		       ({name,Name}) ->
+			    io:format("  name: ~s\n", [Name]);
+		       ({address,Addr}) ->
+			    io:format("  addr: ~s\n", [format_address(Addr)]);
+		       ({What,Value}) ->
+			    io:format("  ~p: ~p\n", [What,Value])
+		    end, Info);
+	Error ->
+	    Error
+    end.
+
 %%
 %% Dump service information
 %% s(Addr [UUID])
