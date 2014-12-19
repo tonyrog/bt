@@ -313,6 +313,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	uint32_t sid;
 	subscription_t* s;
 	int r;
+	int len;
 	int sock;
 
 	DEBUGF("CMD_RFCOMM_SEND cmdid=%d", cmdid);
@@ -325,26 +326,32 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto badarg;
 	s->cmdid = cmdid;
 
-	if (s->out == NULL)
-	    s->out = ddata_new(data_in.rd, ddata_r_avail(&data_in));
-	else
-	    ddata_add(s->out, data_in.rd, ddata_r_avail(&data_in));
-	// try write
-	r = write(sock, s->out->rd, ddata_r_avail(s->out));
-	if ((r >= 0) || ((r < 0) && (errno == EINPROGRESS))) {
-	    if (r < 0) r = 0;
-	    s->out->rd += r;
-	    if (ddata_w_avail(s->out) > 0)
-		bt_poll_set_events(PTR2INT(s->handle), POLLIN|POLLOUT);
+	if ((len = ddata_r_avail(&data_in)) > 0) {
+	    if (s->out == NULL)
+		s->out = ddata_new(data_in.rd, len);
+	    else
+		ddata_add(s->out, data_in.rd, len);
+	    r = write(sock, s->out->rd, ddata_r_avail(s->out));
+	    DEBUGF("CMD_RFCOMM_SEND wrote=%d", r);
+	    if ((r >= 0) || ((r < 0) && (errno == EINPROGRESS))) {
+		if (r < 0) r = 0;
+		s->out->rd += r;
+		if (ddata_r_avail(s->out) > 0)
+		    bt_poll_set_events(PTR2INT(s->handle), POLLIN|POLLOUT);
+		else {
+		    ddata_reset(s->out);
+		    s->cmdid = 0;
+		    goto ok;
+		}
+	    }
 	    else {
-		ddata_reset(s->out);
-	        s->cmdid = 0;
-		goto ok;
+		s->cmdid = 0;
+		goto error;
 	    }
 	}
 	else {
 	    s->cmdid = 0;
-	    goto error;
+	    goto ok;
 	}
 	goto done;
     }
