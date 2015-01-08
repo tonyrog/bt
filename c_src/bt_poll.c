@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "dlog.h"
+#include "dthread/include/dlog.h"
 #include "bt_poll.h"
 
 static int            poll_sz  = 0;     // allocated size
