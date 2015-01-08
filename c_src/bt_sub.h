@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "ddata.h"
+#include "dthread/include/ddata.h"
 
 typedef enum { 
     INQUIRY,

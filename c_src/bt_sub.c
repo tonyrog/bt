@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "dlog.h"
+#include "dthread/include/dlog.h"
 #include "bt_sub.h"
 
 #define alloc_type(type) calloc(1, sizeof(type))

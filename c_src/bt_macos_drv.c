@@ -18,9 +18,8 @@
 #include <IOBluetooth/objc/IOBluetoothSDPUUID.h>
 #include <IOBluetooth/objc/IOBluetoothHostController.h>
 
-// #include "dthread.h"
-#include "dlog.h"
-#include "ddata.h"
+#include "dthread/include/dlog.h"
+#include "dthread/include/ddata.h"
 #include "bt_drv.h"
 
 #define alloc_type(type) calloc(1, sizeof(type))

@@ -16,8 +16,8 @@
 #include <bluetooth/l2cap.h>
 #include <bluetooth/rfcomm.h>
 
-#include "dlog.h"
-#include "ddata.h"
+#include "dthread/include/dlog.h"
+#include "dthread/include/ddata.h"
 #include "bt_drv.h"
 #include "bt_poll.h"
 
