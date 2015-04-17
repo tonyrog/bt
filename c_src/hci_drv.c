@@ -406,6 +406,8 @@ static void hci_drv_stop(ErlDrvData d)
   }
 }
 
+// #define USE_WRITEV
+
 static void hci_drv_output(ErlDrvData d, char* buf,ErlDrvSizeT len)
 {
   hci_drv_ctx_t* ctx = (hci_drv_ctx_t*) d;
@@ -416,7 +418,25 @@ static void hci_drv_output(ErlDrvData d, char* buf,ErlDrvSizeT len)
     DEBUGF("hci_drv_tput: put on queue pending=%d", n+len);
   }
   else  {  // try send directly
+    // data format must be 
+    // <<HCI_COMMAND_PKT,Opcode:16,Plen:8,Param:Plen/binary>>
+#ifdef USE_WRITEV
+    struct iovec iv[3];
+    int ivn;
+    // try write with writev !!!
+    iv[0].iov_base = buf;
+    iv[0].iov_len  = 1;
+    iv[1].iov_base = buf+1;
+    iv[1].iov_len  = HCI_COMMAND_HDR_SIZE;
+    iv[2].iov_base = buf+4;
+    iv[2].iov_len  = buf[3];
+    ivn = buf[3] ? 3 : 2;
+    DEBUGF("writev = %d, len=%d", 1+HCI_COMMAND_HDR_SIZE+buf[3], len);
+
+    n = writev(INT_EVENT(ctx->fd), iv, ivn);
+#else
     n = write(INT_EVENT(ctx->fd), buf, len);
+#endif
     if (n < 0) {
       ERRORF("write error=%s", strerror(errno));
       if ((errno == EAGAIN) || (errno = ENOBUFS)) {
@@ -445,9 +465,6 @@ static void hci_drv_ready_input(ErlDrvData d, ErlDrvEvent event)
   int n;
   (void) event;
 
-
-  DEBUGF("hci_drv_ready_input");
-
   if ((n = read(INT_EVENT(ctx->fd), buf, sizeof(buf))) < 0) {
     if ((errno == EAGAIN) || (errno == EINTR))
       return;
@@ -455,6 +472,7 @@ static void hci_drv_ready_input(ErlDrvData d, ErlDrvEvent event)
 	   errno, strerror(errno));
     return;
   }
+  DEBUGF("hci_drv_ready_input: got %d bytes", n);
   if (n > 0)
     driver_output(ctx->port, (char*) buf, n);
 }
@@ -512,16 +530,20 @@ static ErlDrvSSizeT hci_drv_ctl(ErlDrvData d,unsigned int cmd,char* buf0,
 	    goto badarg;
 	active = get_int32(buf);
 	if (active) {
-	    if (!ctx->is_selecting)
+	  if (!ctx->is_selecting) {
 		driver_select(ctx->port, ctx->fd, ERL_DRV_READ, 1);
-	    ctx->is_selecting = 1;
-	    ctx->active = active;
+		DEBUGF("selecting %d for read\n", ctx->fd);
+	  }
+	  ctx->is_selecting = 1;
+	  ctx->active = active;
 	}
 	else {
-	    if (ctx->is_selecting)
+	  if (ctx->is_selecting) {
 		driver_select(ctx->port, ctx->fd, ERL_DRV_READ, 0);
-	    ctx->is_selecting = 0;
-	    ctx->active = 0;
+		DEBUGF("deselecting %d for read\n", ctx->fd);
+	  }
+	  ctx->is_selecting = 0;
+	  ctx->active = 0;
 	}
 	goto ok;
 	break;
@@ -911,7 +933,7 @@ static ErlDrvData hci_drv_start(ErlDrvPort port, char* command)
     // protocol = atoi(arg);
     protocol = BTPROTO_HCI;
     if ((fd = socket(PF_BLUETOOTH,
-		     SOCK_RAW | SOCK_NONBLOCK| SOCK_CLOEXEC,
+		     SOCK_NONBLOCK| SOCK_RAW | SOCK_CLOEXEC,
 		     protocol)) < 0)
       return ERL_DRV_ERROR_ERRNO;
 
@@ -926,6 +948,9 @@ static ErlDrvData hci_drv_start(ErlDrvPort port, char* command)
     ctx->owner = driver_caller(port);
     ctx->protocol = protocol;
     ctx->fd       = (ErlDrvEvent)((long)fd);
+    ctx->active = 0;
+    ctx->is_selecting = 0;
+    ctx->is_sending = 0;
 
     // create i/o buffer
     hci_drv_realloc_buffer(ctx, MIN_HCI_BUFSIZE);

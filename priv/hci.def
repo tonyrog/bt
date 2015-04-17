@@ -639,7 +639,7 @@
 {define, 'OCF_CHANGE_LOCAL_NAME',		16#0013}.
 {struct, change_local_name_cp,
  [
-	{uint8_t, "?HCI_MAX_NAME_LENGTH",	name}
+	{char, "?HCI_MAX_NAME_LENGTH",	name}
 ]}.
 {define, 'CHANGE_LOCAL_NAME_CP_SIZE', 248}.
 
@@ -647,7 +647,7 @@
 {struct, read_local_name_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, "?HCI_MAX_NAME_LENGTH",	name}
+        {char, "?HCI_MAX_NAME_LENGTH",	name}
 ]}.
 {define, 'READ_LOCAL_NAME_RP_SIZE', 249}.
 
@@ -1329,7 +1329,7 @@
 	{uint8_t,	handle},
 	{uint16_t,	length_so_far},
 	{uint16_t,	assoc_length},
-	{uint8_t, "?HCI_MAX_NAME_LENGTH", fragment}
+	{char, "?HCI_MAX_NAME_LENGTH", fragment}
 ]}.
 {define, 'WRITE_REMOTE_AMP_ASSOC_CP_SIZE', 253}.
 {struct, write_remote_amp_assoc_rp,
@@ -1697,7 +1697,7 @@
  [
 	{uint8_t,	status},
 	{uint8_t, 6, 	bdaddr},
-	{uint8_t, "?HCI_MAX_NAME_LENGTH", name}
+	{char, "?HCI_MAX_NAME_LENGTH", name}
 ]}.
 {define, 'EVT_REMOTE_NAME_REQ_COMPLETE_SIZE', 255}.
 
