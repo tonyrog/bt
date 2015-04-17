@@ -112,7 +112,7 @@ i() ->
 open() ->
     Driver = "hci_drv",
     Path = code:priv_dir(bt),
-    io:format("load_driver '~s' from: '~s'\n", [Driver, Path]),
+    %% io:format("load_driver '~s' from: '~s'\n", [Driver, Path]),
     case erl_ddll:load_driver(Path, Driver) of
 	ok ->
 	    erlang:open_port({spawn_driver, Driver}, [binary]);
@@ -253,34 +253,34 @@ set_link_mode(Hci,DevID,Mode0) when is_port(Hci), is_integer(DevID) ->
 
 -spec set_scan(Hci::hci_socket_t(),DevID::hci_devid_t(),Scan::string()) ->
 		      ok | {error,posix()}.
-set_scan(Hci,DevID,Scan0) ->
+set_scan(Hci,DevID,Scan0) when is_port(Hci) ->
     Scan = find_enum_value(Scan0, kv_scan()),
     port_call(Hci, ?CMD_HCISETSCAN, <<DevID:32/signed,Scan:32>>).
 
 -spec set_acl_mtu(Hci::hci_socket_t(),DevID::hci_devid_t(),
 		  Mtu::integer(),Mpkt::integer()) ->
 			 ok | {error,posix()}.
-set_acl_mtu(Hci,DevID,Mtu,Mpkt) ->
+set_acl_mtu(Hci,DevID,Mtu,Mpkt) when is_port(Hci) ->
     port_call(Hci, ?CMD_HCISETACLMTU, <<DevID:32/signed,Mtu:16,Mpkt:16>>).
 
 -spec set_sco_mtu(Hci::hci_socket_t(),DevID::hci_devid_t(),
 		  Mtu::integer(),Mpkt::integer()) ->
 			 ok | {error,posix()}.
-set_sco_mtu(Hci,DevID,Mtu,Mpkt) ->
+set_sco_mtu(Hci,DevID,Mtu,Mpkt) when is_port(Hci) ->
     port_call(Hci, ?CMD_HCISETSCOMTU, <<DevID:32/signed,Mtu:16,Mpkt:16>>).
 
 %% The Hci socket must be bound before this operation
 -spec block(Hci::hci_socket_t(), Addr::bdaddr_t()) ->
 		   ok | {error,posix()}.
-block(Hci, {A,B,C,D,E,F}) ->
+block(Hci, {A,B,C,D,E,F}) when is_port(Hci) ->
     port_call(Hci, ?CMD_HCIBLOCKADDR, <<A,B,C,D,E,F>>).
 
 %% The Hci socket must be bound before this operation
 -spec unblock(Hci::hci_socket_t(), Addr:: all | bdaddr_t()) ->
 		     ok | {error,posix()}.
-unblock(Hci, all) ->
+unblock(Hci, all) when is_port(Hci) ->
     unblock(Hci, {0,0,0,0,0,0});
-unblock(Hci, {A,B,C,D,E,F}) ->
+unblock(Hci, {A,B,C,D,E,F}) when is_port(Hci) ->
     port_call(Hci, ?CMD_HCIUNBLOCKADDR, <<A,B,C,D,E,F>>).
 
 -spec deactivate(Hci::hci_socket_t()) -> ok | {error,posix()}.
@@ -328,14 +328,16 @@ set_filter_opcode(Opcode,  F = #hci_filter { }) ->
 make_filter(Opcode, Ts, Es) when is_integer(Opcode),
 				 is_list(Ts),
 				 is_list(Es) ->
-    Type_mask = make_bits(Ts, 0) band ?HCI_FLT_TYPE_BITS,
-    Event_mask = make_bits(Es, 0) band ?HCI_FLT_EVENT_BITS,
+    
+    Type_mask = make_bits(Ts, 0) band 16#ffffffff,
+    Event_mask = make_bits(Es, 0) band 16#ffffffffffffffff,
     #hci_filter { type_mask = Type_mask,
 		  event_mask = Event_mask,
 		  opcode = Opcode }.
 
 make_bits([255|Ns], Bits) ->  %% ?HCI_VENDOR_PKT! -> 1
     make_bits(Ns, Bits bor 1);
+make_bits([-1|_], _Bits) -> 16#ffffffffffffffff;
 make_bits([Nr|Ns], Bits) when is_integer(Nr), Nr >= 0 ->
     make_bits(Ns, Bits bor (1 bsl Nr));
 make_bits([], Bits) ->

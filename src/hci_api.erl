@@ -4,8 +4,10 @@
 -include("hci_api.hrl").
 
 
-send_inquiry(Socket,Lap,Length,Num_rsp) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_INQUIRY,<<?inquiry_cp_bin(Lap,Length,Num_rsp)>>).
+cname(<<0,_/binary>>) -> [];
+cname(<<C,Cs/binary>>) -> [C|cname(Cs)];
+cname(<<>>) -> [].
+
 
 decode_status_bdaddr_rp(_Data) ->
   case _Data of
@@ -13,134 +15,11 @@ decode_status_bdaddr_rp(_Data) ->
       #status_bdaddr_rp { status = Status,bdaddr = Bdaddr }
   end.
 
-send_periodic_inquiry(Socket,Max_period,Min_period,Lap,Length,Num_rsp) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_PERIODIC_INQUIRY,<<?periodic_inquiry_cp_bin(Max_period,Min_period,Lap,Length,Num_rsp)>>).
-
-send_create_conn(Socket,Bdaddr,Pkt_type,Pscan_rep_mode,Pscan_mode,Clock_offset,Role_switch) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_CREATE_CONN,<<?create_conn_cp_bin(Bdaddr,Pkt_type,Pscan_rep_mode,Pscan_mode,Clock_offset,Role_switch)>>).
-
-send_disconnect(Socket,Handle,Reason) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT,<<?disconnect_cp_bin(Handle,Reason)>>).
-
-send_add_sco(Socket,Handle,Pkt_type) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_ADD_SCO,<<?add_sco_cp_bin(Handle,Pkt_type)>>).
-
-send_create_conn_cancel(Socket,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_CREATE_CONN_CANCEL,<<?create_conn_cancel_cp_bin(Bdaddr)>>).
-
-send_accept_conn_req(Socket,Bdaddr,Role) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_CONN_REQ,<<?accept_conn_req_cp_bin(Bdaddr,Role)>>).
-
-send_reject_conn_req(Socket,Bdaddr,Reason) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_REJECT_CONN_REQ,<<?reject_conn_req_cp_bin(Bdaddr,Reason)>>).
-
-send_link_key_reply(Socket,Bdaddr,Link_key) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_LINK_KEY_REPLY,<<?link_key_reply_cp_bin(Bdaddr,Link_key)>>).
-
-send_link_key_neg_reply(Socket,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_LINK_KEY_NEG_REPLY,<<?link_key_neg_reply_cp_bin(Bdaddr)>>).
-
-send_pin_code_reply(Socket,Bdaddr,Pin_len,Pin_code) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_PIN_CODE_REPLY,<<?pin_code_reply_cp_bin(Bdaddr,Pin_len,Pin_code)>>).
-
-send_set_conn_ptype(Socket,Handle,Pkt_type) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_SET_CONN_PTYPE,<<?set_conn_ptype_cp_bin(Handle,Pkt_type)>>).
-
-send_auth_requested(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_AUTH_REQUESTED,<<?auth_requested_cp_bin(Handle)>>).
-
-send_set_conn_encrypt(Socket,Handle,Encrypt) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_SET_CONN_ENCRYPT,<<?set_conn_encrypt_cp_bin(Handle,Encrypt)>>).
-
-send_change_conn_link_key(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_CHANGE_CONN_LINK_KEY,<<?change_conn_link_key_cp_bin(Handle)>>).
-
-send_master_link_key(Socket,Key_flag) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_MASTER_LINK_KEY,<<?master_link_key_cp_bin(Key_flag)>>).
-
-send_remote_name_req(Socket,Bdaddr,Pscan_rep_mode,Pscan_mode,Clock_offset) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ,<<?remote_name_req_cp_bin(Bdaddr,Pscan_rep_mode,Pscan_mode,Clock_offset)>>).
-
-send_remote_name_req_cancel(Socket,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ_CANCEL,<<?remote_name_req_cancel_cp_bin(Bdaddr)>>).
-
-send_read_remote_features(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_FEATURES,<<?read_remote_features_cp_bin(Handle)>>).
-
-send_read_remote_ext_features(Socket,Handle,Page_num) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_EXT_FEATURES,<<?read_remote_ext_features_cp_bin(Handle,Page_num)>>).
-
-send_read_remote_version(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_VERSION,<<?read_remote_version_cp_bin(Handle)>>).
-
-send_read_clock_offset(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_READ_CLOCK_OFFSET,<<?read_clock_offset_cp_bin(Handle)>>).
-
-send_setup_sync_conn(Socket,Handle,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_SETUP_SYNC_CONN,<<?setup_sync_conn_cp_bin(Handle,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type)>>).
-
-send_accept_sync_conn_req(Socket,Bdaddr,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_SYNC_CONN_REQ,<<?accept_sync_conn_req_cp_bin(Bdaddr,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type)>>).
-
-send_reject_sync_conn_req(Socket,Bdaddr,Reason) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_REJECT_SYNC_CONN_REQ,<<?reject_sync_conn_req_cp_bin(Bdaddr,Reason)>>).
-
-send_io_capability_reply(Socket,Bdaddr,Capability,Oob_data,Authentication) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_IO_CAPABILITY_REPLY,<<?io_capability_reply_cp_bin(Bdaddr,Capability,Oob_data,Authentication)>>).
-
-send_user_confirm_reply(Socket,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_USER_CONFIRM_REPLY,<<?user_confirm_reply_cp_bin(Bdaddr)>>).
-
-send_user_passkey_reply(Socket,Bdaddr,Passkey) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_USER_PASSKEY_REPLY,<<?user_passkey_reply_cp_bin(Bdaddr,Passkey)>>).
-
-send_remote_oob_data_reply(Socket,Bdaddr,Hash,Randomizer) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_REMOTE_OOB_DATA_REPLY,<<?remote_oob_data_reply_cp_bin(Bdaddr,Hash,Randomizer)>>).
-
-send_io_capability_neg_reply(Socket,Bdaddr,Reason) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_IO_CAPABILITY_NEG_REPLY,<<?io_capability_neg_reply_cp_bin(Bdaddr,Reason)>>).
-
-send_create_physical_link(Socket,Handle,Key_length,Key_type,Key) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_CREATE_PHYSICAL_LINK,<<?create_physical_link_cp_bin(Handle,Key_length,Key_type,Key)>>).
-
-send_disconnect_physical_link(Socket,Handle,Reason) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT_PHYSICAL_LINK,<<?disconnect_physical_link_cp_bin(Handle,Reason)>>).
-
-send_create_logical_link(Socket,Handle,Tx_flow,Rx_flow) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_CREATE_LOGICAL_LINK,<<?create_logical_link_cp_bin(Handle,Tx_flow,Rx_flow)>>).
-
-send_disconnect_logical_link(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT_LOGICAL_LINK,<<?disconnect_logical_link_cp_bin(Handle)>>).
-
-send_cancel_logical_link(Socket,Handle,Tx_flow_id) ->
-  hci_socket:send(Socket,?OGF_LINK_CTL,?OCF_LOGICAL_LINK_CANCEL,<<?cancel_logical_link_cp_bin(Handle,Tx_flow_id)>>).
-
 decode_cancel_logical_link_rp(_Data) ->
   case _Data of
     <<?cancel_logical_link_rp_bin(Status,Handle,Tx_flow_id)>> ->
       #cancel_logical_link_rp { status = Status,handle = Handle,tx_flow_id = Tx_flow_id }
   end.
-
-send_hold_mode(Socket,Handle,Max_interval,Min_interval) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_HOLD_MODE,<<?hold_mode_cp_bin(Handle,Max_interval,Min_interval)>>).
-
-send_sniff_mode(Socket,Handle,Max_interval,Min_interval,Attempt,Timeout) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_SNIFF_MODE,<<?sniff_mode_cp_bin(Handle,Max_interval,Min_interval,Attempt,Timeout)>>).
-
-send_exit_sniff_mode(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_EXIT_SNIFF_MODE,<<?exit_sniff_mode_cp_bin(Handle)>>).
-
-send_park_mode(Socket,Handle,Max_interval,Min_interval) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_PARK_MODE,<<?park_mode_cp_bin(Handle,Max_interval,Min_interval)>>).
-
-send_exit_park_mode(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_EXIT_PARK_MODE,<<?exit_park_mode_cp_bin(Handle)>>).
-
-send_qos_setup(Socket,Handle,Flags,Qos) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_QOS_SETUP,<<?qos_setup_cp_bin(Handle,Flags,Qos)>>).
-
-send_role_discovery(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_ROLE_DISCOVERY,<<?role_discovery_cp_bin(Handle)>>).
 
 decode_role_discovery_rp(_Data) ->
   case _Data of
@@ -148,20 +27,11 @@ decode_role_discovery_rp(_Data) ->
       #role_discovery_rp { status = Status,handle = Handle,role = Role }
   end.
 
-send_switch_role(Socket,Bdaddr,Role) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_SWITCH_ROLE,<<?switch_role_cp_bin(Bdaddr,Role)>>).
-
-send_read_link_policy(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_READ_LINK_POLICY,<<?read_link_policy_cp_bin(Handle)>>).
-
 decode_read_link_policy_rp(_Data) ->
   case _Data of
     <<?read_link_policy_rp_bin(Status,Handle,Policy)>> ->
       #read_link_policy_rp { status = Status,handle = Handle,policy = Policy }
   end.
-
-send_write_link_policy(Socket,Handle,Policy) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_WRITE_LINK_POLICY,<<?write_link_policy_cp_bin(Handle,Policy)>>).
 
 decode_write_link_policy_rp(_Data) ->
   case _Data of
@@ -169,26 +39,11 @@ decode_write_link_policy_rp(_Data) ->
       #write_link_policy_rp { status = Status,handle = Handle }
   end.
 
-send_sniff_subrating(Socket,Handle,Max_latency,Min_remote_timeout,Min_local_timeout) ->
-  hci_socket:send(Socket,?OGF_LINK_POLICY,?OCF_SNIFF_SUBRATING,<<?sniff_subrating_cp_bin(Handle,Max_latency,Min_remote_timeout,Min_local_timeout)>>).
-
-send_set_event_mask(Socket,Mask) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_SET_EVENT_MASK,<<?set_event_mask_cp_bin(Mask)>>).
-
-send_set_event_flt(Socket,Flt_type,Cond_type,Condition) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_SET_EVENT_FLT,<<?set_event_flt_cp_bin(Flt_type,Cond_type,Condition)>>).
-
 decode_read_pin_type_rp(_Data) ->
   case _Data of
     <<?read_pin_type_rp_bin(Status,Pin_type)>> ->
       #read_pin_type_rp { status = Status,pin_type = Pin_type }
   end.
-
-send_write_pin_type(Socket,Pin_type) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_PIN_TYPE,<<?write_pin_type_cp_bin(Pin_type)>>).
-
-send_read_stored_link_key(Socket,Bdaddr,Read_all) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_READ_STORED_LINK_KEY,<<?read_stored_link_key_cp_bin(Bdaddr,Read_all)>>).
 
 decode_read_stored_link_key_rp(_Data) ->
   case _Data of
@@ -196,17 +51,11 @@ decode_read_stored_link_key_rp(_Data) ->
       #read_stored_link_key_rp { status = Status,max_keys = Max_keys,num_keys = Num_keys }
   end.
 
-send_write_stored_link_key(Socket,Num_keys) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_STORED_LINK_KEY,<<?write_stored_link_key_cp_bin(Num_keys)>>).
-
 decode_write_stored_link_key_rp(_Data) ->
   case _Data of
     <<?write_stored_link_key_rp_bin(Status,Num_keys)>> ->
       #write_stored_link_key_rp { status = Status,num_keys = Num_keys }
   end.
-
-send_delete_stored_link_key(Socket,Bdaddr,Delete_all) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_DELETE_STORED_LINK_KEY,<<?delete_stored_link_key_cp_bin(Bdaddr,Delete_all)>>).
 
 decode_delete_stored_link_key_rp(_Data) ->
   case _Data of
@@ -214,13 +63,10 @@ decode_delete_stored_link_key_rp(_Data) ->
       #delete_stored_link_key_rp { status = Status,num_keys = Num_keys }
   end.
 
-send_change_local_name(Socket,Name) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_CHANGE_LOCAL_NAME,<<?change_local_name_cp_bin(Name)>>).
-
 decode_read_local_name_rp(_Data) ->
   case _Data of
     <<?read_local_name_rp_bin(Status,Name)>> ->
-      #read_local_name_rp { status = Status,name = Name }
+      #read_local_name_rp { status = Status,name = cname(Name) }
   end.
 
 decode_read_conn_accept_timeout_rp(_Data) ->
@@ -229,17 +75,11 @@ decode_read_conn_accept_timeout_rp(_Data) ->
       #read_conn_accept_timeout_rp { status = Status,timeout = Timeout }
   end.
 
-send_write_conn_accept_timeout(Socket,Timeout) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_CONN_ACCEPT_TIMEOUT,<<?write_conn_accept_timeout_cp_bin(Timeout)>>).
-
 decode_read_page_timeout_rp(_Data) ->
   case _Data of
     <<?read_page_timeout_rp_bin(Status,Timeout)>> ->
       #read_page_timeout_rp { status = Status,timeout = Timeout }
   end.
-
-send_write_page_timeout(Socket,Timeout) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_TIMEOUT,<<?write_page_timeout_cp_bin(Timeout)>>).
 
 decode_read_scan_enable_rp(_Data) ->
   case _Data of
@@ -253,17 +93,11 @@ decode_read_page_activity_rp(_Data) ->
       #read_page_activity_rp { status = Status,interval = Interval,window = Window }
   end.
 
-send_write_page_activity(Socket,Interval,Window) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_ACTIVITY,<<?write_page_activity_cp_bin(Interval,Window)>>).
-
 decode_read_inq_activity_rp(_Data) ->
   case _Data of
     <<?read_inq_activity_rp_bin(Status,Interval,Window)>> ->
       #read_inq_activity_rp { status = Status,interval = Interval,window = Window }
   end.
-
-send_write_inq_activity(Socket,Interval,Window) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQ_ACTIVITY,<<?write_inq_activity_cp_bin(Interval,Window)>>).
 
 decode_read_class_of_dev_rp(_Data) ->
   case _Data of
@@ -271,20 +105,11 @@ decode_read_class_of_dev_rp(_Data) ->
       #read_class_of_dev_rp { status = Status,dev_class = Dev_class }
   end.
 
-send_write_class_of_dev(Socket,Dev_class) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_CLASS_OF_DEV,<<?write_class_of_dev_cp_bin(Dev_class)>>).
-
 decode_read_voice_setting_rp(_Data) ->
   case _Data of
     <<?read_voice_setting_rp_bin(Status,Voice_setting)>> ->
       #read_voice_setting_rp { status = Status,voice_setting = Voice_setting }
   end.
-
-send_write_voice_setting(Socket,Voice_setting) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_VOICE_SETTING,<<?write_voice_setting_cp_bin(Voice_setting)>>).
-
-send_read_transmit_power_level(Socket,Handle,Type) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_READ_TRANSMIT_POWER_LEVEL,<<?read_transmit_power_level_cp_bin(Handle,Type)>>).
 
 decode_read_transmit_power_level_rp(_Data) ->
   case _Data of
@@ -292,20 +117,11 @@ decode_read_transmit_power_level_rp(_Data) ->
       #read_transmit_power_level_rp { status = Status,handle = Handle,level = Level }
   end.
 
-send_host_buffer_size(Socket,Acl_mtu,Sco_mtu,Acl_max_pkt,Sco_max_pkt) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_HOST_BUFFER_SIZE,<<?host_buffer_size_cp_bin(Acl_mtu,Sco_mtu,Acl_max_pkt,Sco_max_pkt)>>).
-
-send_host_num_comp_pkts(Socket,Num_hndl) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_HOST_NUM_COMP_PKTS,<<?host_num_comp_pkts_cp_bin(Num_hndl)>>).
-
 decode_read_link_supervision_timeout_rp(_Data) ->
   case _Data of
     <<?read_link_supervision_timeout_rp_bin(Status,Handle,Timeout)>> ->
       #read_link_supervision_timeout_rp { status = Status,handle = Handle,timeout = Timeout }
   end.
-
-send_write_link_supervision_timeout(Socket,Handle,Timeout) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_LINK_SUPERVISION_TIMEOUT,<<?write_link_supervision_timeout_cp_bin(Handle,Timeout)>>).
 
 decode_write_link_supervision_timeout_rp(_Data) ->
   case _Data of
@@ -319,12 +135,6 @@ decode_read_current_iac_lap_rp(_Data) ->
       #read_current_iac_lap_rp { status = Status,num_current_iac = Num_current_iac,lap = Lap }
   end.
 
-send_write_current_iac_lap(Socket,Num_current_iac,Lap) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_CURRENT_IAC_LAP,<<?write_current_iac_lap_cp_bin(Num_current_iac,Lap)>>).
-
-send_set_afh_classification(Socket,Map) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_SET_AFH_CLASSIFICATION,<<?set_afh_classification_cp_bin(Map)>>).
-
 decode_set_afh_classification_rp(_Data) ->
   case _Data of
     <<?set_afh_classification_rp_bin(Status)>> ->
@@ -336,9 +146,6 @@ decode_read_inquiry_scan_type_rp(_Data) ->
     <<?read_inquiry_scan_type_rp_bin(Status,Type)>> ->
       #read_inquiry_scan_type_rp { status = Status,type = Type }
   end.
-
-send_write_inquiry_scan_type(Socket,Type) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_SCAN_TYPE,<<?write_inquiry_scan_type_cp_bin(Type)>>).
 
 decode_write_inquiry_scan_type_rp(_Data) ->
   case _Data of
@@ -352,9 +159,6 @@ decode_read_inquiry_mode_rp(_Data) ->
       #read_inquiry_mode_rp { status = Status,mode = Mode }
   end.
 
-send_write_inquiry_mode(Socket,Mode) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_MODE,<<?write_inquiry_mode_cp_bin(Mode)>>).
-
 decode_write_inquiry_mode_rp(_Data) ->
   case _Data of
     <<?write_inquiry_mode_rp_bin(Status)>> ->
@@ -366,9 +170,6 @@ decode_read_afh_mode_rp(_Data) ->
     <<?read_afh_mode_rp_bin(Status,Mode)>> ->
       #read_afh_mode_rp { status = Status,mode = Mode }
   end.
-
-send_write_afh_mode(Socket,Mode) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_AFH_MODE,<<?write_afh_mode_cp_bin(Mode)>>).
 
 decode_write_afh_mode_rp(_Data) ->
   case _Data of
@@ -382,17 +183,11 @@ decode_read_ext_inquiry_response_rp(_Data) ->
       #read_ext_inquiry_response_rp { status = Status,fec = Fec,data = Data }
   end.
 
-send_write_ext_inquiry_response(Socket,Fec,Data) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_EXT_INQUIRY_RESPONSE,<<?write_ext_inquiry_response_cp_bin(Fec,Data)>>).
-
 decode_write_ext_inquiry_response_rp(_Data) ->
   case _Data of
     <<?write_ext_inquiry_response_rp_bin(Status)>> ->
       #write_ext_inquiry_response_rp { status = Status }
   end.
-
-send_refresh_encryption_key(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_REFRESH_ENCRYPTION_KEY,<<?refresh_encryption_key_cp_bin(Handle)>>).
 
 decode_refresh_encryption_key_rp(_Data) ->
   case _Data of
@@ -405,9 +200,6 @@ decode_read_simple_pairing_mode_rp(_Data) ->
     <<?read_simple_pairing_mode_rp_bin(Status,Mode)>> ->
       #read_simple_pairing_mode_rp { status = Status,mode = Mode }
   end.
-
-send_write_simple_pairing_mode(Socket,Mode) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_SIMPLE_PAIRING_MODE,<<?write_simple_pairing_mode_cp_bin(Mode)>>).
 
 decode_write_simple_pairing_mode_rp(_Data) ->
   case _Data of
@@ -433,9 +225,6 @@ decode_read_inquiry_transmit_power_level_rp(_Data) ->
       #read_inquiry_transmit_power_level_rp { status = Status,level = Level }
   end.
 
-send_write_inquiry_transmit_power_level(Socket,Level) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_TRANSMIT_POWER_LEVEL,<<?write_inquiry_transmit_power_level_cp_bin(Level)>>).
-
 decode_write_inquiry_transmit_power_level_rp(_Data) ->
   case _Data of
     <<?write_inquiry_transmit_power_level_rp_bin(Status)>> ->
@@ -448,20 +237,11 @@ decode_read_default_error_data_reporting_rp(_Data) ->
       #read_default_error_data_reporting_rp { status = Status,reporting = Reporting }
   end.
 
-send_write_default_error_data_reporting(Socket,Reporting) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_DEFAULT_ERROR_DATA_REPORTING,<<?write_default_error_data_reporting_cp_bin(Reporting)>>).
-
 decode_write_default_error_data_reporting_rp(_Data) ->
   case _Data of
     <<?write_default_error_data_reporting_rp_bin(Status)>> ->
       #write_default_error_data_reporting_rp { status = Status }
   end.
-
-send_enhanced_flush(Socket,Handle,Type) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_ENHANCED_FLUSH,<<?enhanced_flush_cp_bin(Handle,Type)>>).
-
-send_send_keypress_notify(Socket,Bdaddr,Type) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_SEND_KEYPRESS_NOTIFY,<<?send_keypress_notify_cp_bin(Bdaddr,Type)>>).
 
 decode_send_keypress_notify_rp(_Data) ->
   case _Data of
@@ -475,9 +255,6 @@ decode_read_log_link_accept_timeout_rp(_Data) ->
       #read_log_link_accept_timeout_rp { status = Status,timeout = Timeout }
   end.
 
-send_write_log_link_accept_timeout(Socket,Timeout) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_LOGICAL_LINK_ACCEPT_TIMEOUT,<<?write_log_link_accept_timeout_cp_bin(Timeout)>>).
-
 decode_read_enhanced_transmit_power_level_rp(_Data) ->
   case _Data of
     <<?read_enhanced_transmit_power_level_rp_bin(Status,Handle,Level_gfsk,Level_dqpsk,Level_8dpsk)>> ->
@@ -490,9 +267,6 @@ decode_read_best_effort_flush_timeout_rp(_Data) ->
       #read_best_effort_flush_timeout_rp { status = Status,timeout = Timeout }
   end.
 
-send_write_best_effort_flush_timeout(Socket,Handle,Timeout) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_BEST_EFFORT_FLUSH_TIMEOUT,<<?write_best_effort_flush_timeout_cp_bin(Handle,Timeout)>>).
-
 decode_write_best_effort_flush_timeout_rp(_Data) ->
   case _Data of
     <<?write_best_effort_flush_timeout_rp_bin(Status)>> ->
@@ -504,9 +278,6 @@ decode_read_le_host_supported_rp(_Data) ->
     <<?read_le_host_supported_rp_bin(Status,Le,Simul)>> ->
       #read_le_host_supported_rp { status = Status,le = Le,simul = Simul }
   end.
-
-send_write_le_host_supported(Socket,Le,Simul) ->
-  hci_socket:send(Socket,?OGF_HOST_CTL,?OCF_WRITE_LE_HOST_SUPPORTED,<<?write_le_host_supported_cp_bin(Le,Simul)>>).
 
 decode_read_local_version_rp(_Data) ->
   case _Data of
@@ -525,9 +296,6 @@ decode_read_local_features_rp(_Data) ->
     <<?read_local_features_rp_bin(Status,Features)>> ->
       #read_local_features_rp { status = Status,features = Features }
   end.
-
-send_read_local_ext_features(Socket,Page_num) ->
-  hci_socket:send(Socket,?OGF_INFO_PARAM,?OCF_READ_LOCAL_EXT_FEATURES,<<?read_local_ext_features_cp_bin(Page_num)>>).
 
 decode_read_local_ext_features_rp(_Data) ->
   case _Data of
@@ -577,9 +345,6 @@ decode_read_afh_map_rp(_Data) ->
       #read_afh_map_rp { status = Status,handle = Handle,mode = Mode,map = Map }
   end.
 
-send_read_clock(Socket,Handle,Which_clock) ->
-  hci_socket:send(Socket,?OGF_STATUS_PARAM,?OCF_READ_CLOCK,<<?read_clock_cp_bin(Handle,Which_clock)>>).
-
 decode_read_clock_rp(_Data) ->
   case _Data of
     <<?read_clock_rp_bin(Status,Handle,Clock,Accuracy)>> ->
@@ -592,17 +357,11 @@ decode_read_local_amp_info_rp(_Data) ->
       #read_local_amp_info_rp { status = Status,amp_status = Amp_status,total_bandwidth = Total_bandwidth,max_guaranteed_bandwidth = Max_guaranteed_bandwidth,min_latency = Min_latency,max_pdu_size = Max_pdu_size,controller_type = Controller_type,pal_caps = Pal_caps,max_amp_assoc_length = Max_amp_assoc_length,max_flush_timeout = Max_flush_timeout,best_effort_flush_timeout = Best_effort_flush_timeout }
   end.
 
-send_read_local_amp_assoc(Socket,Handle,Len_so_far,Max_len) ->
-  hci_socket:send(Socket,?OGF_STATUS_PARAM,?OCF_READ_LOCAL_AMP_ASSOC,<<?read_local_amp_assoc_cp_bin(Handle,Len_so_far,Max_len)>>).
-
 decode_read_local_amp_assoc_rp(_Data) ->
   case _Data of
     <<?read_local_amp_assoc_rp_bin(Status,Handle,Rem_len,Frag)>> ->
       #read_local_amp_assoc_rp { status = Status,handle = Handle,rem_len = Rem_len,frag = Frag }
   end.
-
-send_write_remote_amp_assoc(Socket,Handle,Length_so_far,Assoc_length,Fragment) ->
-  hci_socket:send(Socket,?OGF_STATUS_PARAM,?OCF_WRITE_REMOTE_AMP_ASSOC,<<?write_remote_amp_assoc_cp_bin(Handle,Length_so_far,Assoc_length,Fragment)>>).
 
 decode_write_remote_amp_assoc_rp(_Data) ->
   case _Data of
@@ -610,17 +369,11 @@ decode_write_remote_amp_assoc_rp(_Data) ->
       #write_remote_amp_assoc_rp { status = Status,handle = Handle }
   end.
 
-send_write_simple_pairing_debug_mode(Socket,Mode) ->
-  hci_socket:send(Socket,?OGF_TESTING_CMD,?OCF_WRITE_SIMPLE_PAIRING_DEBUG_MODE,<<?write_simple_pairing_debug_mode_cp_bin(Mode)>>).
-
 decode_write_simple_pairing_debug_mode_rp(_Data) ->
   case _Data of
     <<?write_simple_pairing_debug_mode_rp_bin(Status)>> ->
       #write_simple_pairing_debug_mode_rp { status = Status }
   end.
-
-send_le_set_event_mask(Socket,Mask) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_EVENT_MASK,<<?le_set_event_mask_cp_bin(Mask)>>).
 
 decode_le_read_buffer_size_rp(_Data) ->
   case _Data of
@@ -634,35 +387,11 @@ decode_le_read_local_supported_features_rp(_Data) ->
       #le_read_local_supported_features_rp { status = Status,features = Features }
   end.
 
-send_le_set_random_address(Socket,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_RANDOM_ADDRESS,<<?le_set_random_address_cp_bin(Bdaddr)>>).
-
-send_le_set_advertising_parameters(Socket,Min_interval,Max_interval,Advtype,Own_bdaddr_type,Direct_bdaddr_type,Direct_bdaddr,Chan_map,Filter) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISING_PARAMETERS,<<?le_set_advertising_parameters_cp_bin(Min_interval,Max_interval,Advtype,Own_bdaddr_type,Direct_bdaddr_type,Direct_bdaddr,Chan_map,Filter)>>).
-
 decode_le_read_advertising_channel_tx_power_rp(_Data) ->
   case _Data of
     <<?le_read_advertising_channel_tx_power_rp_bin(Status,Level)>> ->
       #le_read_advertising_channel_tx_power_rp { status = Status,level = Level }
   end.
-
-send_le_set_advertising_data(Socket,Length,Data) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISING_DATA,<<?le_set_advertising_data_cp_bin(Length,Data)>>).
-
-send_le_set_scan_response_data(Socket,Length,Data) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_RESPONSE_DATA,<<?le_set_scan_response_data_cp_bin(Length,Data)>>).
-
-send_le_set_advertise_enable(Socket,Enable) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISE_ENABLE,<<?le_set_advertise_enable_cp_bin(Enable)>>).
-
-send_le_set_scan_parameters(Socket,Type,Interval,Window,Own_bdaddr_type,Filter) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_PARAMETERS,<<?le_set_scan_parameters_cp_bin(Type,Interval,Window,Own_bdaddr_type,Filter)>>).
-
-send_le_set_scan_enable(Socket,Enable,Filter_dup) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_ENABLE,<<?le_set_scan_enable_cp_bin(Enable,Filter_dup)>>).
-
-send_le_create_connection(Socket,Interval,Window,Initiator_filter,Peer_bdaddr_type,Peer_bdaddr,Own_bdaddr_type,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_CREATE_CONN,<<?le_create_connection_cp_bin(Interval,Window,Initiator_filter,Peer_bdaddr_type,Peer_bdaddr,Own_bdaddr_type,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length)>>).
 
 decode_le_read_white_list_size_rp(_Data) ->
   case _Data of
@@ -670,32 +399,11 @@ decode_le_read_white_list_size_rp(_Data) ->
       #le_read_white_list_size_rp { status = Status,size = Size }
   end.
 
-send_le_add_device_to_white_list(Socket,Bdaddr_type,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_ADD_DEVICE_TO_WHITE_LIST,<<?le_add_device_to_white_list_cp_bin(Bdaddr_type,Bdaddr)>>).
-
-send_le_remove_device_from_white_list(Socket,Bdaddr_type,Bdaddr) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_REMOVE_DEVICE_FROM_WHITE_LIST,<<?le_remove_device_from_white_list_cp_bin(Bdaddr_type,Bdaddr)>>).
-
-send_le_connection_update(Socket,Handle,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_CONN_UPDATE,<<?le_connection_update_cp_bin(Handle,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length)>>).
-
-send_le_set_host_channel_classification(Socket,Map) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_SET_HOST_CHANNEL_CLASSIFICATION,<<?le_set_host_channel_classification_cp_bin(Map)>>).
-
-send_le_read_channel_map(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_READ_CHANNEL_MAP,<<?le_read_channel_map_cp_bin(Handle)>>).
-
 decode_le_read_channel_map_rp(_Data) ->
   case _Data of
     <<?le_read_channel_map_rp_bin(Status,Handle,Map)>> ->
       #le_read_channel_map_rp { status = Status,handle = Handle,map = Map }
   end.
-
-send_le_read_remote_used_features(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_READ_REMOTE_USED_FEATURES,<<?le_read_remote_used_features_cp_bin(Handle)>>).
-
-send_le_encrypt(Socket,Key,Plaintext) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_ENCRYPT,<<?le_encrypt_cp_bin(Key,Plaintext)>>).
 
 decode_le_encrypt_rp(_Data) ->
   case _Data of
@@ -709,20 +417,11 @@ decode_le_rand_rp(_Data) ->
       #le_rand_rp { status = Status,random = Random }
   end.
 
-send_le_start_encryption(Socket,Handle,Random,Diversifier,Key) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_START_ENCRYPTION,<<?le_start_encryption_cp_bin(Handle,Random,Diversifier,Key)>>).
-
-send_le_ltk_reply(Socket,Handle,Key) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_LTK_REPLY,<<?le_ltk_reply_cp_bin(Handle,Key)>>).
-
 decode_le_ltk_reply_rp(_Data) ->
   case _Data of
     <<?le_ltk_reply_rp_bin(Status,Handle)>> ->
       #le_ltk_reply_rp { status = Status,handle = Handle }
   end.
-
-send_le_ltk_neg_reply(Socket,Handle) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_LTK_NEG_REPLY,<<?le_ltk_neg_reply_cp_bin(Handle)>>).
 
 decode_le_ltk_neg_reply_rp(_Data) ->
   case _Data of
@@ -735,12 +434,6 @@ decode_le_read_supported_states_rp(_Data) ->
     <<?le_read_supported_states_rp_bin(Status,States)>> ->
       #le_read_supported_states_rp { status = Status,states = States }
   end.
-
-send_le_receiver_test(Socket,Frequency) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_RECEIVER_TEST,<<?le_receiver_test_cp_bin(Frequency)>>).
-
-send_le_transmitter_test(Socket,Frequency,Length,Payload) ->
-  hci_socket:send(Socket,?OGF_LE_CTL,?OCF_LE_TRANSMITTER_TEST,<<?le_transmitter_test_cp_bin(Frequency,Length,Payload)>>).
 
 decode_le_test_end_rp(_Data) ->
   case _Data of
@@ -781,7 +474,7 @@ decode_evt_auth_complete(_Data) ->
 decode_evt_remote_name_req_complete(_Data) ->
   case _Data of
     <<?evt_remote_name_req_complete_bin(Status,Bdaddr,Name)>> ->
-      #evt_remote_name_req_complete { status = Status,bdaddr = Bdaddr,name = Name }
+      #evt_remote_name_req_complete { status = Status,bdaddr = Bdaddr,name = cname(Name) }
   end.
 
 decode_evt_encrypt_change(_Data) ->
@@ -1184,3 +877,586 @@ decode_le(Evt,_Data) ->
     ?EVT_LE_CONN_COMPLETE -> decode_evt_le_connection_complete(_Data);
     _ -> erlang:error(bad_event)
   end.
+
+le_test_end(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_TEST_END,<<>>,fun decode_le_test_end_rp/1).
+
+le_transmitter_test(Socket,Frequency,Length,Payload) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_TRANSMITTER_TEST,<<?le_transmitter_test_cp_bin(Frequency,Length,Payload)>>,undefined).
+
+le_receiver_test(Socket,Frequency) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_RECEIVER_TEST,<<?le_receiver_test_cp_bin(Frequency)>>,undefined).
+
+le_read_supported_states(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_SUPPORTED_STATES,<<>>,fun decode_le_read_supported_states_rp/1).
+
+le_ltk_neg_reply(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_LTK_NEG_REPLY,<<?le_ltk_neg_reply_cp_bin(Handle)>>,fun decode_le_ltk_neg_reply_rp/1).
+
+le_ltk_reply(Socket,Handle,Key) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_LTK_REPLY,<<?le_ltk_reply_cp_bin(Handle,Key)>>,fun decode_le_ltk_reply_rp/1).
+
+le_start_encryption(Socket,Handle,Random,Diversifier,Key) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_START_ENCRYPTION,<<?le_start_encryption_cp_bin(Handle,Random,Diversifier,Key)>>,undefined).
+
+le_rand(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_RAND,<<>>,fun decode_le_rand_rp/1).
+
+le_encrypt(Socket,Key,Plaintext) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_ENCRYPT,<<?le_encrypt_cp_bin(Key,Plaintext)>>,fun decode_le_encrypt_rp/1).
+
+le_read_remote_used_features(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_REMOTE_USED_FEATURES,<<?le_read_remote_used_features_cp_bin(Handle)>>,undefined).
+
+le_read_channel_map(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_CHANNEL_MAP,<<?le_read_channel_map_cp_bin(Handle)>>,fun decode_le_read_channel_map_rp/1).
+
+le_set_host_channel_classification(Socket,Map) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_HOST_CHANNEL_CLASSIFICATION,<<?le_set_host_channel_classification_cp_bin(Map)>>,undefined).
+
+le_conn_update(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_CONN_UPDATE,<<>>,undefined).
+
+le_remove_device_from_white_list(Socket,Bdaddr_type,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_REMOVE_DEVICE_FROM_WHITE_LIST,<<?le_remove_device_from_white_list_cp_bin(Bdaddr_type,Bdaddr)>>,undefined).
+
+le_add_device_to_white_list(Socket,Bdaddr_type,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_ADD_DEVICE_TO_WHITE_LIST,<<?le_add_device_to_white_list_cp_bin(Bdaddr_type,Bdaddr)>>,undefined).
+
+le_clear_white_list(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_CLEAR_WHITE_LIST,<<>>,undefined).
+
+le_read_white_list_size(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_WHITE_LIST_SIZE,<<>>,fun decode_le_read_white_list_size_rp/1).
+
+le_create_conn_cancel(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_CREATE_CONN_CANCEL,<<>>,undefined).
+
+le_create_conn(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_CREATE_CONN,<<>>,undefined).
+
+le_set_scan_enable(Socket,Enable,Filter_dup) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_ENABLE,<<?le_set_scan_enable_cp_bin(Enable,Filter_dup)>>,undefined).
+
+le_set_scan_parameters(Socket,Type,Interval,Window,Own_bdaddr_type,Filter) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_PARAMETERS,<<?le_set_scan_parameters_cp_bin(Type,Interval,Window,Own_bdaddr_type,Filter)>>,undefined).
+
+le_set_advertise_enable(Socket,Enable) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISE_ENABLE,<<?le_set_advertise_enable_cp_bin(Enable)>>,undefined).
+
+le_set_scan_response_data(Socket,Length,Data) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_SCAN_RESPONSE_DATA,<<?le_set_scan_response_data_cp_bin(Length,Data)>>,undefined).
+
+le_set_advertising_data(Socket,Length,Data) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISING_DATA,<<?le_set_advertising_data_cp_bin(Length,Data)>>,undefined).
+
+le_read_advertising_channel_tx_power(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_ADVERTISING_CHANNEL_TX_POWER,<<>>,fun decode_le_read_advertising_channel_tx_power_rp/1).
+
+le_set_advertising_parameters(Socket,Min_interval,Max_interval,Advtype,Own_bdaddr_type,Direct_bdaddr_type,Direct_bdaddr,Chan_map,Filter) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_ADVERTISING_PARAMETERS,<<?le_set_advertising_parameters_cp_bin(Min_interval,Max_interval,Advtype,Own_bdaddr_type,Direct_bdaddr_type,Direct_bdaddr,Chan_map,Filter)>>,undefined).
+
+le_set_random_address(Socket,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_RANDOM_ADDRESS,<<?le_set_random_address_cp_bin(Bdaddr)>>,undefined).
+
+le_read_local_supported_features(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_LOCAL_SUPPORTED_FEATURES,<<>>,fun decode_le_read_local_supported_features_rp/1).
+
+le_read_buffer_size(Socket) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_READ_BUFFER_SIZE,<<>>,fun decode_le_read_buffer_size_rp/1).
+
+le_set_event_mask(Socket,Mask) ->
+  hci_socket:call(Socket,?OGF_LE_CTL,?OCF_LE_SET_EVENT_MASK,<<?le_set_event_mask_cp_bin(Mask)>>,undefined).
+
+write_simple_pairing_debug_mode(Socket,Mode) ->
+  hci_socket:call(Socket,?OGF_TESTING_CMD,?OCF_WRITE_SIMPLE_PAIRING_DEBUG_MODE,<<?write_simple_pairing_debug_mode_cp_bin(Mode)>>,fun decode_write_simple_pairing_debug_mode_rp/1).
+
+enable_device_under_test_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_TESTING_CMD,?OCF_ENABLE_DEVICE_UNDER_TEST_MODE,<<>>,undefined).
+
+write_loopback_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_TESTING_CMD,?OCF_WRITE_LOOPBACK_MODE,<<>>,undefined).
+
+read_loopback_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_TESTING_CMD,?OCF_READ_LOOPBACK_MODE,<<>>,undefined).
+
+write_remote_amp_assoc(Socket,Handle,Length_so_far,Assoc_length,Fragment) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_WRITE_REMOTE_AMP_ASSOC,<<?write_remote_amp_assoc_cp_bin(Handle,Length_so_far,Assoc_length,Fragment)>>,fun decode_write_remote_amp_assoc_rp/1).
+
+read_local_amp_assoc(Socket,Handle,Len_so_far,Max_len) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_LOCAL_AMP_ASSOC,<<?read_local_amp_assoc_cp_bin(Handle,Len_so_far,Max_len)>>,fun decode_read_local_amp_assoc_rp/1).
+
+read_local_amp_info(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_LOCAL_AMP_INFO,<<>>,fun decode_read_local_amp_info_rp/1).
+
+read_clock(Socket,Handle,Which_clock) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_CLOCK,<<?read_clock_cp_bin(Handle,Which_clock)>>,fun decode_read_clock_rp/1).
+
+read_afh_map(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_AFH_MAP,<<>>,fun decode_read_afh_map_rp/1).
+
+read_rssi(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_RSSI,<<>>,fun decode_read_rssi_rp/1).
+
+read_link_quality(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_LINK_QUALITY,<<>>,fun decode_read_link_quality_rp/1).
+
+reset_failed_contact_counter(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_RESET_FAILED_CONTACT_COUNTER,<<>>,fun decode_reset_failed_contact_counter_rp/1).
+
+read_failed_contact_counter(Socket) ->
+  hci_socket:call(Socket,?OGF_STATUS_PARAM,?OCF_READ_FAILED_CONTACT_COUNTER,<<>>,fun decode_read_failed_contact_counter_rp/1).
+
+read_bd_addr(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_BD_ADDR,<<>>,fun decode_read_bd_addr_rp/1).
+
+read_country_code(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_COUNTRY_CODE,<<>>,undefined).
+
+read_buffer_size(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_BUFFER_SIZE,<<>>,fun decode_read_buffer_size_rp/1).
+
+read_local_ext_features(Socket,Page_num) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_LOCAL_EXT_FEATURES,<<?read_local_ext_features_cp_bin(Page_num)>>,fun decode_read_local_ext_features_rp/1).
+
+read_local_features(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_LOCAL_FEATURES,<<>>,fun decode_read_local_features_rp/1).
+
+read_local_commands(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_LOCAL_COMMANDS,<<>>,fun decode_read_local_commands_rp/1).
+
+read_local_version(Socket) ->
+  hci_socket:call(Socket,?OGF_INFO_PARAM,?OCF_READ_LOCAL_VERSION,<<>>,fun decode_read_local_version_rp/1).
+
+write_le_host_supported(Socket,Le,Simul) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_LE_HOST_SUPPORTED,<<?write_le_host_supported_cp_bin(Le,Simul)>>,undefined).
+
+read_le_host_supported(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LE_HOST_SUPPORTED,<<>>,fun decode_read_le_host_supported_rp/1).
+
+write_best_effort_flush_timeout(Socket,Handle,Timeout) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_BEST_EFFORT_FLUSH_TIMEOUT,<<?write_best_effort_flush_timeout_cp_bin(Handle,Timeout)>>,fun decode_write_best_effort_flush_timeout_rp/1).
+
+read_best_effort_flush_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_BEST_EFFORT_FLUSH_TIMEOUT,<<>>,fun decode_read_best_effort_flush_timeout_rp/1).
+
+read_enhanced_transmit_power_level(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_ENHANCED_TRANSMIT_POWER_LEVEL,<<>>,fun decode_read_enhanced_transmit_power_level_rp/1).
+
+write_flow_control_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_FLOW_CONTROL_MODE,<<>>,undefined).
+
+read_flow_control_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_FLOW_CONTROL_MODE,<<>>,undefined).
+
+write_location_data(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_LOCATION_DATA,<<>>,undefined).
+
+read_location_data(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LOCATION_DATA,<<>>,undefined).
+
+set_event_mask_page_2(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SET_EVENT_MASK_PAGE_2,<<>>,undefined).
+
+write_logical_link_accept_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_LOGICAL_LINK_ACCEPT_TIMEOUT,<<>>,undefined).
+
+read_logical_link_accept_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LOGICAL_LINK_ACCEPT_TIMEOUT,<<>>,undefined).
+
+send_keypress_notify(Socket,Bdaddr,Type) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SEND_KEYPRESS_NOTIFY,<<?send_keypress_notify_cp_bin(Bdaddr,Type)>>,fun decode_send_keypress_notify_rp/1).
+
+enhanced_flush(Socket,Handle,Type) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_ENHANCED_FLUSH,<<?enhanced_flush_cp_bin(Handle,Type)>>,undefined).
+
+write_default_error_data_reporting(Socket,Reporting) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_DEFAULT_ERROR_DATA_REPORTING,<<?write_default_error_data_reporting_cp_bin(Reporting)>>,fun decode_write_default_error_data_reporting_rp/1).
+
+read_default_error_data_reporting(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_DEFAULT_ERROR_DATA_REPORTING,<<>>,fun decode_read_default_error_data_reporting_rp/1).
+
+write_inquiry_transmit_power_level(Socket,Level) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_TRANSMIT_POWER_LEVEL,<<?write_inquiry_transmit_power_level_cp_bin(Level)>>,fun decode_write_inquiry_transmit_power_level_rp/1).
+
+read_inquiry_transmit_power_level(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_INQUIRY_TRANSMIT_POWER_LEVEL,<<>>,fun decode_read_inquiry_transmit_power_level_rp/1).
+
+read_inq_response_tx_power_level(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_INQ_RESPONSE_TX_POWER_LEVEL,<<>>,fun decode_read_inq_response_tx_power_level_rp/1).
+
+read_local_oob_data(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LOCAL_OOB_DATA,<<>>,fun decode_read_local_oob_data_rp/1).
+
+write_simple_pairing_mode(Socket,Mode) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_SIMPLE_PAIRING_MODE,<<?write_simple_pairing_mode_cp_bin(Mode)>>,fun decode_write_simple_pairing_mode_rp/1).
+
+read_simple_pairing_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_SIMPLE_PAIRING_MODE,<<>>,fun decode_read_simple_pairing_mode_rp/1).
+
+refresh_encryption_key(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_REFRESH_ENCRYPTION_KEY,<<?refresh_encryption_key_cp_bin(Handle)>>,fun decode_refresh_encryption_key_rp/1).
+
+write_ext_inquiry_response(Socket,Fec,Data) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_EXT_INQUIRY_RESPONSE,<<?write_ext_inquiry_response_cp_bin(Fec,Data)>>,fun decode_write_ext_inquiry_response_rp/1).
+
+read_ext_inquiry_response(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_EXT_INQUIRY_RESPONSE,<<>>,fun decode_read_ext_inquiry_response_rp/1).
+
+write_afh_mode(Socket,Mode) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_AFH_MODE,<<?write_afh_mode_cp_bin(Mode)>>,fun decode_write_afh_mode_rp/1).
+
+read_afh_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_AFH_MODE,<<>>,fun decode_read_afh_mode_rp/1).
+
+write_page_scan_type(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_SCAN_TYPE,<<>>,undefined).
+
+read_page_scan_type(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PAGE_SCAN_TYPE,<<>>,undefined).
+
+write_inquiry_mode(Socket,Mode) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_MODE,<<?write_inquiry_mode_cp_bin(Mode)>>,fun decode_write_inquiry_mode_rp/1).
+
+read_inquiry_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_INQUIRY_MODE,<<>>,fun decode_read_inquiry_mode_rp/1).
+
+write_inquiry_scan_type(Socket,Type) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQUIRY_SCAN_TYPE,<<?write_inquiry_scan_type_cp_bin(Type)>>,fun decode_write_inquiry_scan_type_rp/1).
+
+read_inquiry_scan_type(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_INQUIRY_SCAN_TYPE,<<>>,fun decode_read_inquiry_scan_type_rp/1).
+
+set_afh_classification(Socket,Map) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SET_AFH_CLASSIFICATION,<<?set_afh_classification_cp_bin(Map)>>,fun decode_set_afh_classification_rp/1).
+
+write_page_scan_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_SCAN_MODE,<<>>,undefined).
+
+read_page_scan_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PAGE_SCAN_MODE,<<>>,undefined).
+
+write_page_scan_period_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_SCAN_PERIOD_MODE,<<>>,undefined).
+
+read_page_scan_period_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PAGE_SCAN_PERIOD_MODE,<<>>,undefined).
+
+write_current_iac_lap(Socket,Num_current_iac,Lap) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_CURRENT_IAC_LAP,<<?write_current_iac_lap_cp_bin(Num_current_iac,Lap)>>,undefined).
+
+read_current_iac_lap(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_CURRENT_IAC_LAP,<<>>,fun decode_read_current_iac_lap_rp/1).
+
+read_num_supported_iac(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_NUM_SUPPORTED_IAC,<<>>,undefined).
+
+write_link_supervision_timeout(Socket,Handle,Timeout) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_LINK_SUPERVISION_TIMEOUT,<<?write_link_supervision_timeout_cp_bin(Handle,Timeout)>>,fun decode_write_link_supervision_timeout_rp/1).
+
+read_link_supervision_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LINK_SUPERVISION_TIMEOUT,<<>>,fun decode_read_link_supervision_timeout_rp/1).
+
+host_num_comp_pkts(Socket,Num_hndl) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_HOST_NUM_COMP_PKTS,<<?host_num_comp_pkts_cp_bin(Num_hndl)>>,undefined).
+
+host_buffer_size(Socket,Acl_mtu,Sco_mtu,Acl_max_pkt,Sco_max_pkt) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_HOST_BUFFER_SIZE,<<?host_buffer_size_cp_bin(Acl_mtu,Sco_mtu,Acl_max_pkt,Sco_max_pkt)>>,undefined).
+
+set_controller_to_host_fc(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SET_CONTROLLER_TO_HOST_FC,<<>>,undefined).
+
+write_sync_flow_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_SYNC_FLOW_ENABLE,<<>>,undefined).
+
+read_sync_flow_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_SYNC_FLOW_ENABLE,<<>>,undefined).
+
+read_transmit_power_level(Socket,Handle,Type) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_TRANSMIT_POWER_LEVEL,<<?read_transmit_power_level_cp_bin(Handle,Type)>>,fun decode_read_transmit_power_level_rp/1).
+
+write_hold_mode_activity(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_HOLD_MODE_ACTIVITY,<<>>,undefined).
+
+read_hold_mode_activity(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_HOLD_MODE_ACTIVITY,<<>>,undefined).
+
+write_num_broadcast_retrans(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_NUM_BROADCAST_RETRANS,<<>>,undefined).
+
+read_num_broadcast_retrans(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_NUM_BROADCAST_RETRANS,<<>>,undefined).
+
+write_automatic_flush_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_AUTOMATIC_FLUSH_TIMEOUT,<<>>,undefined).
+
+read_automatic_flush_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_AUTOMATIC_FLUSH_TIMEOUT,<<>>,undefined).
+
+write_voice_setting(Socket,Voice_setting) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_VOICE_SETTING,<<?write_voice_setting_cp_bin(Voice_setting)>>,undefined).
+
+read_voice_setting(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_VOICE_SETTING,<<>>,fun decode_read_voice_setting_rp/1).
+
+write_class_of_dev(Socket,Dev_class) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_CLASS_OF_DEV,<<?write_class_of_dev_cp_bin(Dev_class)>>,undefined).
+
+read_class_of_dev(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_CLASS_OF_DEV,<<>>,fun decode_read_class_of_dev_rp/1).
+
+write_encrypt_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_ENCRYPT_MODE,<<>>,undefined).
+
+read_encrypt_mode(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_ENCRYPT_MODE,<<>>,undefined).
+
+write_auth_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_AUTH_ENABLE,<<>>,undefined).
+
+read_auth_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_AUTH_ENABLE,<<>>,undefined).
+
+write_inq_activity(Socket,Interval,Window) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_INQ_ACTIVITY,<<?write_inq_activity_cp_bin(Interval,Window)>>,undefined).
+
+read_inq_activity(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_INQ_ACTIVITY,<<>>,fun decode_read_inq_activity_rp/1).
+
+write_page_activity(Socket,Interval,Window) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_ACTIVITY,<<?write_page_activity_cp_bin(Interval,Window)>>,undefined).
+
+read_page_activity(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PAGE_ACTIVITY,<<>>,fun decode_read_page_activity_rp/1).
+
+write_scan_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_SCAN_ENABLE,<<>>,undefined).
+
+read_scan_enable(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_SCAN_ENABLE,<<>>,fun decode_read_scan_enable_rp/1).
+
+write_page_timeout(Socket,Timeout) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PAGE_TIMEOUT,<<?write_page_timeout_cp_bin(Timeout)>>,undefined).
+
+read_page_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PAGE_TIMEOUT,<<>>,fun decode_read_page_timeout_rp/1).
+
+write_conn_accept_timeout(Socket,Timeout) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_CONN_ACCEPT_TIMEOUT,<<?write_conn_accept_timeout_cp_bin(Timeout)>>,undefined).
+
+read_conn_accept_timeout(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_CONN_ACCEPT_TIMEOUT,<<>>,fun decode_read_conn_accept_timeout_rp/1).
+
+read_local_name(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_LOCAL_NAME,<<>>,fun decode_read_local_name_rp/1).
+
+change_local_name(Socket,Name) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_CHANGE_LOCAL_NAME,<<?change_local_name_cp_bin(Name)>>,undefined).
+
+delete_stored_link_key(Socket,Bdaddr,Delete_all) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_DELETE_STORED_LINK_KEY,<<?delete_stored_link_key_cp_bin(Bdaddr,Delete_all)>>,fun decode_delete_stored_link_key_rp/1).
+
+write_stored_link_key(Socket,Num_keys) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_STORED_LINK_KEY,<<?write_stored_link_key_cp_bin(Num_keys)>>,fun decode_write_stored_link_key_rp/1).
+
+read_stored_link_key(Socket,Bdaddr,Read_all) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_STORED_LINK_KEY,<<?read_stored_link_key_cp_bin(Bdaddr,Read_all)>>,fun decode_read_stored_link_key_rp/1).
+
+create_new_unit_key(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_CREATE_NEW_UNIT_KEY,<<>>,undefined).
+
+write_pin_type(Socket,Pin_type) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_WRITE_PIN_TYPE,<<?write_pin_type_cp_bin(Pin_type)>>,undefined).
+
+read_pin_type(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_READ_PIN_TYPE,<<>>,fun decode_read_pin_type_rp/1).
+
+flush(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_FLUSH,<<>>,undefined).
+
+set_event_flt(Socket,Flt_type,Cond_type,Condition) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SET_EVENT_FLT,<<?set_event_flt_cp_bin(Flt_type,Cond_type,Condition)>>,undefined).
+
+reset(Socket) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_RESET,<<>>,undefined).
+
+set_event_mask(Socket,Mask) ->
+  hci_socket:call(Socket,?OGF_HOST_CTL,?OCF_SET_EVENT_MASK,<<?set_event_mask_cp_bin(Mask)>>,undefined).
+
+sniff_subrating(Socket,Handle,Max_latency,Min_remote_timeout,Min_local_timeout) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_SNIFF_SUBRATING,<<?sniff_subrating_cp_bin(Handle,Max_latency,Min_remote_timeout,Min_local_timeout)>>,undefined).
+
+flow_specification(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_FLOW_SPECIFICATION,<<>>,undefined).
+
+write_default_link_policy(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_WRITE_DEFAULT_LINK_POLICY,<<>>,undefined).
+
+read_default_link_policy(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_READ_DEFAULT_LINK_POLICY,<<>>,undefined).
+
+write_link_policy(Socket,Handle,Policy) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_WRITE_LINK_POLICY,<<?write_link_policy_cp_bin(Handle,Policy)>>,fun decode_write_link_policy_rp/1).
+
+read_link_policy(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_READ_LINK_POLICY,<<?read_link_policy_cp_bin(Handle)>>,fun decode_read_link_policy_rp/1).
+
+switch_role(Socket,Bdaddr,Role) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_SWITCH_ROLE,<<?switch_role_cp_bin(Bdaddr,Role)>>,undefined).
+
+role_discovery(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_ROLE_DISCOVERY,<<?role_discovery_cp_bin(Handle)>>,fun decode_role_discovery_rp/1).
+
+qos_setup(Socket,Handle,Flags,Qos) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_QOS_SETUP,<<?qos_setup_cp_bin(Handle,Flags,Qos)>>,undefined).
+
+exit_park_mode(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_EXIT_PARK_MODE,<<?exit_park_mode_cp_bin(Handle)>>,undefined).
+
+park_mode(Socket,Handle,Max_interval,Min_interval) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_PARK_MODE,<<?park_mode_cp_bin(Handle,Max_interval,Min_interval)>>,undefined).
+
+exit_sniff_mode(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_EXIT_SNIFF_MODE,<<?exit_sniff_mode_cp_bin(Handle)>>,undefined).
+
+sniff_mode(Socket,Handle,Max_interval,Min_interval,Attempt,Timeout) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_SNIFF_MODE,<<?sniff_mode_cp_bin(Handle,Max_interval,Min_interval,Attempt,Timeout)>>,undefined).
+
+hold_mode(Socket,Handle,Max_interval,Min_interval) ->
+  hci_socket:call(Socket,?OGF_LINK_POLICY,?OCF_HOLD_MODE,<<?hold_mode_cp_bin(Handle,Max_interval,Min_interval)>>,undefined).
+
+flow_spec_modify(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_FLOW_SPEC_MODIFY,<<>>,undefined).
+
+logical_link_cancel(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_LOGICAL_LINK_CANCEL,<<>>,undefined).
+
+disconnect_logical_link(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT_LOGICAL_LINK,<<?disconnect_logical_link_cp_bin(Handle)>>,undefined).
+
+accept_logical_link(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_LOGICAL_LINK,<<>>,undefined).
+
+create_logical_link(Socket,Handle,Tx_flow,Rx_flow) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_CREATE_LOGICAL_LINK,<<?create_logical_link_cp_bin(Handle,Tx_flow,Rx_flow)>>,undefined).
+
+disconnect_physical_link(Socket,Handle,Reason) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT_PHYSICAL_LINK,<<?disconnect_physical_link_cp_bin(Handle,Reason)>>,undefined).
+
+accept_physical_link(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_PHYSICAL_LINK,<<>>,undefined).
+
+create_physical_link(Socket,Handle,Key_length,Key_type,Key) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_CREATE_PHYSICAL_LINK,<<?create_physical_link_cp_bin(Handle,Key_length,Key_type,Key)>>,undefined).
+
+io_capability_neg_reply(Socket,Bdaddr,Reason) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_IO_CAPABILITY_NEG_REPLY,<<?io_capability_neg_reply_cp_bin(Bdaddr,Reason)>>,undefined).
+
+remote_oob_data_neg_reply(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REMOTE_OOB_DATA_NEG_REPLY,<<>>,undefined).
+
+remote_oob_data_reply(Socket,Bdaddr,Hash,Randomizer) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REMOTE_OOB_DATA_REPLY,<<?remote_oob_data_reply_cp_bin(Bdaddr,Hash,Randomizer)>>,undefined).
+
+user_passkey_neg_reply(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_USER_PASSKEY_NEG_REPLY,<<>>,undefined).
+
+user_passkey_reply(Socket,Bdaddr,Passkey) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_USER_PASSKEY_REPLY,<<?user_passkey_reply_cp_bin(Bdaddr,Passkey)>>,undefined).
+
+user_confirm_neg_reply(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_USER_CONFIRM_NEG_REPLY,<<>>,undefined).
+
+user_confirm_reply(Socket,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_USER_CONFIRM_REPLY,<<?user_confirm_reply_cp_bin(Bdaddr)>>,undefined).
+
+io_capability_reply(Socket,Bdaddr,Capability,Oob_data,Authentication) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_IO_CAPABILITY_REPLY,<<?io_capability_reply_cp_bin(Bdaddr,Capability,Oob_data,Authentication)>>,undefined).
+
+reject_sync_conn_req(Socket,Bdaddr,Reason) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REJECT_SYNC_CONN_REQ,<<?reject_sync_conn_req_cp_bin(Bdaddr,Reason)>>,undefined).
+
+accept_sync_conn_req(Socket,Bdaddr,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_SYNC_CONN_REQ,<<?accept_sync_conn_req_cp_bin(Bdaddr,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type)>>,undefined).
+
+setup_sync_conn(Socket,Handle,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_SETUP_SYNC_CONN,<<?setup_sync_conn_cp_bin(Handle,Tx_bandwith,Rx_bandwith,Max_latency,Voice_setting,Retrans_effort,Pkt_type)>>,undefined).
+
+read_lmp_handle(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_READ_LMP_HANDLE,<<>>,undefined).
+
+read_clock_offset(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_READ_CLOCK_OFFSET,<<?read_clock_offset_cp_bin(Handle)>>,undefined).
+
+read_remote_version(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_VERSION,<<?read_remote_version_cp_bin(Handle)>>,undefined).
+
+read_remote_ext_features(Socket,Handle,Page_num) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_EXT_FEATURES,<<?read_remote_ext_features_cp_bin(Handle,Page_num)>>,undefined).
+
+read_remote_features(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_READ_REMOTE_FEATURES,<<?read_remote_features_cp_bin(Handle)>>,undefined).
+
+remote_name_req_cancel(Socket,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ_CANCEL,<<?remote_name_req_cancel_cp_bin(Bdaddr)>>,undefined).
+
+remote_name_req(Socket,Bdaddr,Pscan_rep_mode,Pscan_mode,Clock_offset) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ,<<?remote_name_req_cp_bin(Bdaddr,Pscan_rep_mode,Pscan_mode,Clock_offset)>>,undefined).
+
+master_link_key(Socket,Key_flag) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_MASTER_LINK_KEY,<<?master_link_key_cp_bin(Key_flag)>>,undefined).
+
+change_conn_link_key(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_CHANGE_CONN_LINK_KEY,<<?change_conn_link_key_cp_bin(Handle)>>,undefined).
+
+set_conn_encrypt(Socket,Handle,Encrypt) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_SET_CONN_ENCRYPT,<<?set_conn_encrypt_cp_bin(Handle,Encrypt)>>,undefined).
+
+auth_requested(Socket,Handle) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_AUTH_REQUESTED,<<?auth_requested_cp_bin(Handle)>>,undefined).
+
+set_conn_ptype(Socket,Handle,Pkt_type) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_SET_CONN_PTYPE,<<?set_conn_ptype_cp_bin(Handle,Pkt_type)>>,undefined).
+
+pin_code_neg_reply(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_PIN_CODE_NEG_REPLY,<<>>,undefined).
+
+pin_code_reply(Socket,Bdaddr,Pin_len,Pin_code) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_PIN_CODE_REPLY,<<?pin_code_reply_cp_bin(Bdaddr,Pin_len,Pin_code)>>,undefined).
+
+link_key_neg_reply(Socket,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_LINK_KEY_NEG_REPLY,<<?link_key_neg_reply_cp_bin(Bdaddr)>>,undefined).
+
+link_key_reply(Socket,Bdaddr,Link_key) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_LINK_KEY_REPLY,<<?link_key_reply_cp_bin(Bdaddr,Link_key)>>,undefined).
+
+reject_conn_req(Socket,Bdaddr,Reason) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_REJECT_CONN_REQ,<<?reject_conn_req_cp_bin(Bdaddr,Reason)>>,undefined).
+
+accept_conn_req(Socket,Bdaddr,Role) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_ACCEPT_CONN_REQ,<<?accept_conn_req_cp_bin(Bdaddr,Role)>>,undefined).
+
+create_conn_cancel(Socket,Bdaddr) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_CREATE_CONN_CANCEL,<<?create_conn_cancel_cp_bin(Bdaddr)>>,undefined).
+
+add_sco(Socket,Handle,Pkt_type) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_ADD_SCO,<<?add_sco_cp_bin(Handle,Pkt_type)>>,undefined).
+
+disconnect(Socket,Handle,Reason) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_DISCONNECT,<<?disconnect_cp_bin(Handle,Reason)>>,undefined).
+
+create_conn(Socket,Bdaddr,Pkt_type,Pscan_rep_mode,Pscan_mode,Clock_offset,Role_switch) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_CREATE_CONN,<<?create_conn_cp_bin(Bdaddr,Pkt_type,Pscan_rep_mode,Pscan_mode,Clock_offset,Role_switch)>>,undefined).
+
+exit_periodic_inquiry(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_EXIT_PERIODIC_INQUIRY,<<>>,undefined).
+
+periodic_inquiry(Socket,Max_period,Min_period,Lap,Length,Num_rsp) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_PERIODIC_INQUIRY,<<?periodic_inquiry_cp_bin(Max_period,Min_period,Lap,Length,Num_rsp)>>,undefined).
+
+inquiry_cancel(Socket) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_INQUIRY_CANCEL,<<>>,undefined).
+
+inquiry(Socket,Lap,Length,Num_rsp) ->
+  hci_socket:call(Socket,?OGF_LINK_CTL,?OCF_INQUIRY,<<?inquiry_cp_bin(Lap,Length,Num_rsp)>>,undefined).
+
