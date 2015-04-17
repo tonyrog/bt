@@ -476,7 +476,12 @@ stop() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    Driver = filename:join([code:priv_dir(bt),"bt"]),
+    PD = case code:priv_dir(bt) of
+	     { error, bad_name } -> "./priv/";
+	     Res -> Res
+	 end,
+	     
+    Driver = filename:join([PD,"bt"]),
     Port = open_port({spawn, Driver}, [{packet,4},binary,eof]),
     Reg = ets:new(btreg, [public, set, named_table]),
     {ok, #state{ bt_port = Port, reg = Reg }}.
