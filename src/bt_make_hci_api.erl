@@ -22,15 +22,17 @@
 %% A command OCG_<COMMAND-NAME> is also in company with
 %% command structure: <command_name>_cp or <command_name>_rp
 %%
-%%
+%% {type, name(), type()}   type definition
+%% 
 %% {enum, [name()]} | {enum, [{name(),value()}]}
+%%
 %% {struct,name(),[{type(),name()}]}
 %% {struct,name(),[{type(),size(),name()}]}
 %%
 %% <name>_cp  is command struct
 %% <name>_rp  is reply struct
 %%
-
+%% 
 %%
 %% Generate include file hrl
 %% Generate source file erl
@@ -198,7 +200,7 @@ write_call(Erl,OGF,OCF,Defs) ->
 %% Write definition to header file.
 %% Write decode functions to erlang file.
 %%    
-write_def(Hrl, Erl, Def, _Defs0) ->
+write_def(Hrl, Erl, Def, Defs0) ->
     io:format("Def = ~p\n", [Def]),
     case Def of
 	{define,Name,Value} when is_integer(Value) ->
@@ -226,12 +228,17 @@ write_def(Hrl, Erl, Def, _Defs0) ->
 			false ->  {evt,NameString}
 		    end;
 		_ -> ok
-	    end;	    
+	    end;
+
+	{type, _Name, _Type} -> %% used internally
+	    ok;
+
 	{enum,Es} ->
 	    lists:foreach(
 	      fun({Name,Value}) when is_integer(Value) ->
 		      io:format(Hrl, "-define(~s, ~w).\n", [Name, Value])
 	      end, enum_es(Es));
+
 	{struct,Name,Fields} ->
 	    NameString = atom_to_list(Name),
 	    %% generate a record
@@ -242,7 +249,7 @@ write_def(Hrl, Erl, Def, _Defs0) ->
 	    io:format(Hrl, "\n}).\n", []),
 	    %% generate a binary match sequence
 	    MacroArgs = [ var_name(F) || F <- FieldNames ],
-	    BinBody = field_match(Fields),
+	    BinBody = field_match_list(Fields, Defs0),
 	    io:format(Hrl, "-define(~s_bin(~s),~s).\n",
 		      [Name, join(MacroArgs,","), 
 		       join(BinBody,",")]),
@@ -327,41 +334,63 @@ find_struct(Name,[_|Defs]) ->
 find_struct(_, []) ->
     false.
 
+find_type(char,_)     -> true;
+find_type(uint8_t,_)  -> true;
+find_type(int8_t,_)   -> true;
+find_type(uint16_t,_) -> true;
+find_type(uint32_t,_) -> true;
+find_type(uint64_t,_) -> true;
+find_type(Name,[TypeDef={type,Name,_}|_Defs]) ->
+    TypeDef;
+find_type(Name,[_|Defs]) ->
+    find_type(Name,Defs);
+find_type(_, []) ->
+    false.
 
-field_match([{Type,Name}|Fs]) ->
-    [ var_name(Name)++type_unit(Type) | field_match(Fs)];
-field_match([{Type,Size,Name}|Fs]) ->
-    [ var_name(Name)++":"++
-	  if is_integer(Size) ->
-		  integer_to_list(Size);
-	     is_list(Size) ->
-		  "("++Size++")"
-	  end ++ "/" ++ bin_unit(Type)  | field_match(Fs)];
-field_match([]) ->
+field_match_list([{Type,Name}|Fs], Defs) ->
+    [ field_match(Type,Name,Defs) | field_match_list(Fs,Defs)];
+field_match_list([], _Defs) ->
     [].
+
+field_match(Type,Name,Defs) when is_atom(Type) ->
+    case find_type(Type,Defs) of
+	true -> %% basic type
+	    var_name(Name)++type_unit(Type);
+	{type,_,Type1} ->
+	    field_match(Type1,Name,Defs)
+    end;
+field_match({Type,Size},Name,Defs) when is_atom(Type) ->
+    case find_type(Type,Defs) of
+	true ->
+	    var_name(Name)++":"++
+		if is_integer(Size) ->
+			integer_to_list(Size);
+		   is_list(Size) ->
+			"("++Size++")"
+		end ++ "/" ++ unit(Type)++"-binary";
+	{type,_,Type1} ->
+	    field_match({Type1,Size}, Name, Defs)
+    end.
+%% more cases are neede here at some point
 
 type_unit(char)     -> ":1/unsigned-unit:8";
 type_unit(uint8_t)  -> ":1/unsigned-unit:8";
 type_unit(int8_t)   -> ":1/signed-unit:8";
 type_unit(uint16_t) -> ":1/little-unsigned-unit:16";
 type_unit(uint32_t) -> ":1/little-unsigned-unit:32";
-type_unit(uint64_t) -> ":1/little-unsigned-unit:64";
-type_unit(hci_qos)   -> ":17/binary".
+type_unit(uint64_t) -> ":1/little-unsigned-unit:64".
 
-bin_unit(char)     -> "unit:8-binary";
-bin_unit(uint8_t)  -> "unit:8-binary";
-bin_unit(int8_t)   -> "unit:8-binary";
-bin_unit(uint16_t) -> "unit:16-binary";
-bin_unit(uint32_t) -> "unit:32-binary";
-bin_unit(uint64_t) -> "unit:64-binary".
+%% element unit
+unit(char)     -> "unit:8";
+unit(uint8_t)  -> "unit:8";
+unit(int8_t)   -> "unit:8";
+unit(uint16_t) -> "unit:16";
+unit(uint32_t) -> "unit:32";
+unit(uint64_t) -> "unit:64".
+
     
-
-field_names([{_Type,Name}|Fs]) ->
-    [Name | field_names(Fs)];
-field_names([{_Type,_Size,Name}|Fs]) ->
-    [Name | field_names(Fs)];
-field_names([]) ->
-    [].
+field_names(Fs) ->
+    [ Name || {_Type, Name} <- Fs].
 
 join([], _Sep) -> [];
 join([A], _Sep) -> [A];

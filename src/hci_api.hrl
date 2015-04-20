@@ -406,7 +406,7 @@
   flags,
   qos
 }).
--define(qos_setup_cp_bin(Handle,Flags,Qos),Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Qos:17/binary).
+-define(qos_setup_cp_bin(Handle,Flags,Qos),Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Qos:17/unit:8-binary).
 -define(QOS_SETUP_CP_SIZE, (3 + ?HCI_QOS_CP_SIZE)).
 -define(OCF_ROLE_DISCOVERY, 9).
 -record(role_discovery_cp, {
@@ -1511,7 +1511,7 @@
   flags,
   qos
 }).
--define(evt_qos_setup_complete_bin(Status,Handle,Flags,Qos),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Qos:17/binary).
+-define(evt_qos_setup_complete_bin(Status,Handle,Flags,Qos),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Qos:17/unit:8-binary).
 -define(EVT_QOS_SETUP_COMPLETE_SIZE, (4 + ?HCI_QOS_CP_SIZE)).
 -define(EVT_CMD_COMPLETE, 14).
 -record(evt_cmd_complete, {
@@ -1640,7 +1640,7 @@
   direction,
   qos
 }).
--define(evt_flow_spec_complete_bin(Status,Handle,Flags,Direction,Qos),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Direction:1/unsigned-unit:8,Qos:17/binary).
+-define(evt_flow_spec_complete_bin(Status,Handle,Flags,Direction,Qos),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Flags:1/unsigned-unit:8,Direction:1/unsigned-unit:8,Qos:17/unit:8-binary).
 -define(EVT_FLOW_SPEC_COMPLETE_SIZE, (5 + ?HCI_QOS_CP_SIZE)).
 -define(EVT_INQUIRY_RESULT_WITH_RSSI, 34).
 -record(inquiry_info_with_rssi, {

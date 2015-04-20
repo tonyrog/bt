@@ -7,7 +7,6 @@
 
 -module(hci_drv).
 
--export([i/0]).
 -export([open/0]).
 -export([bind/2]).
 -export([close/1]).
@@ -36,6 +35,7 @@
 -export([set_sco_mtu/4]).
 -export([block/2]).
 -export([unblock/2]).
+-export([inquiry/5]).
 
 -export([set_filter/2]).
 -export([get_filter/1]).
@@ -47,6 +47,7 @@
 -export([make_filter/3]).
 
 -include("../include/hci_drv.hrl").
+-include("hci_api.hrl").
 
 %% deugging
 -compile(export_all).
@@ -90,23 +91,6 @@
 -define(DLOG_EMERGENCY, 0).
 -define(DLOG_NONE,     -1).
 
-%% dump information about bluetooth devices
-i() ->
-    Hci = open(),
-    case get_dev_list(Hci) of
-	{ok,Devs} ->
-	    lists:foreach(
-	      fun({DevID,_DevFlags}) ->
-		      case get_dev_info(Hci, DevID) of
-			  {ok, Info} ->
-			      io:format("~s\n", [format_hci_dev_info(Info)]);
-			  Error ->
-			      io:format("error: ~p\n", [Error])
-		      end
-	      end, Devs);
-	Error ->
-	    Error
-    end.
 
 -spec open() -> hci_socket_t().
 open() ->
@@ -197,10 +181,15 @@ get_conn_list(Hci, DevID) ->
 -spec get_conn_info(Hci::hci_socket_t(), Addr::bdaddr_t(), Type::uint8_t()) ->
 			   {ok,#hci_conn_info{}} | {error,posix()}.
 
-get_conn_info(Hci, {A,B,C,D,E,F}, Type) ->
-    case port_call(Hci, ?CMD_HCIGETCONNINFO, <<A,B,C,D,E,F,Type>>) of
-	{ok, Info} ->
-	    {ok, decode_hci_conn_info(Info)};
+get_conn_info(Hci, Addr, Type) when is_port(Hci) ->
+    case bt:getaddr(Addr) of
+	{ok,{A,B,C,D,E,F}} ->
+	    case port_call(Hci, ?CMD_HCIGETCONNINFO, <<F,E,D,C,B,A,Type>>) of
+		{ok, Info} ->
+		    {ok, decode_hci_conn_info(Info)};
+		Error ->
+		    Error
+	    end;
 	Error ->
 	    Error
     end.
@@ -208,8 +197,13 @@ get_conn_info(Hci, {A,B,C,D,E,F}, Type) ->
 -spec get_auth_info(Hci::hci_socket_t(), Addr::bdaddr_t()) ->
 			   {ok, Type::uint8_t()} | {error,posix()}.
 
-get_auth_info(Hci, {A,B,C,D,E,F}) ->
-    port_call(Hci, ?CMD_HCIGETAUTHINFO, <<A,B,C,D,E,F>>).
+get_auth_info(Hci, Addr) when is_port(Hci) ->
+    case bt:getaddr(Addr) of
+	{ok,{A,B,C,D,E,F}} ->
+	    port_call(Hci, ?CMD_HCIGETAUTHINFO, <<F,E,D,C,B,A>>);
+	Error ->
+	    Error
+    end.
 
 %% Set raw processing?
 -spec set_raw(Hci::hci_socket_t(), DevID::hci_devid_t()) -> ok | {error,posix()}.
@@ -236,25 +230,25 @@ set_encrypt(Hci,DevID,DoEncrypt) when is_port(Hci), is_integer(DevID),
 		       ok | {error,posix()}.
 set_ptype(Hci,DevID,PType0) when is_port(Hci), is_integer(DevID),
 				 is_list(PType0) ->
-    PType = set_bits(PType0, kv_pkt_ptype()),
+    PType = set_bits(PType0, hci_util:kv_pkt_ptype()),
     port_call(Hci, ?CMD_HCISETPTYPE, <<DevID:32/signed,PType:32>>).
 
 -spec set_link_policy(Hci::hci_socket_t(),DevID::hci_devid_t(),Pol::string()) ->
 			     ok | {error,posix()}.
 set_link_policy(Hci,DevID,Pol0) when is_port(Hci), is_integer(DevID) ->
-    LinkPolicy = find_enum_value(Pol0, kv_link_policy()),
+    LinkPolicy = hci_util:find_enum_value(Pol0, hci_util:kv_link_policy()),
     port_call(Hci, ?CMD_HCISETLINKPOL, <<DevID:32/signed,LinkPolicy:32>>).
 
 -spec set_link_mode(Hci::hci_socket_t(),DevID::hci_devid_t(),Mode::string()) ->
 			     ok | {error,posix()}.
 set_link_mode(Hci,DevID,Mode0) when is_port(Hci), is_integer(DevID) ->
-    LinkMode = find_enum_value(Mode0, kv_link_mode()),
+    LinkMode = hci_util:find_enum_value(Mode0, hci_util:kv_link_mode()),
     port_call(Hci, ?CMD_HCISETLINKMODE, <<DevID:32/signed,LinkMode:32>>).
 
 -spec set_scan(Hci::hci_socket_t(),DevID::hci_devid_t(),Scan::string()) ->
 		      ok | {error,posix()}.
 set_scan(Hci,DevID,Scan0) when is_port(Hci) ->
-    Scan = find_enum_value(Scan0, kv_scan()),
+    Scan = hci_util:find_enum_value(Scan0, hci_util:kv_scan()),
     port_call(Hci, ?CMD_HCISETSCAN, <<DevID:32/signed,Scan:32>>).
 
 -spec set_acl_mtu(Hci::hci_socket_t(),DevID::hci_devid_t(),
@@ -272,16 +266,43 @@ set_sco_mtu(Hci,DevID,Mtu,Mpkt) when is_port(Hci) ->
 %% The Hci socket must be bound before this operation
 -spec block(Hci::hci_socket_t(), Addr::bdaddr_t()) ->
 		   ok | {error,posix()}.
-block(Hci, {A,B,C,D,E,F}) when is_port(Hci) ->
-    port_call(Hci, ?CMD_HCIBLOCKADDR, <<A,B,C,D,E,F>>).
+block(Hci, Addr) when is_port(Hci) ->
+    case bt:getaddr(Addr) of
+	{ok,{A,B,C,D,E,F}} ->
+	    port_call(Hci, ?CMD_HCIBLOCKADDR, <<F,E,D,C,B,A>>);
+	Error ->
+	    Error
+    end.
 
 %% The Hci socket must be bound before this operation
 -spec unblock(Hci::hci_socket_t(), Addr:: all | bdaddr_t()) ->
 		     ok | {error,posix()}.
 unblock(Hci, all) when is_port(Hci) ->
     unblock(Hci, {0,0,0,0,0,0});
-unblock(Hci, {A,B,C,D,E,F}) when is_port(Hci) ->
-    port_call(Hci, ?CMD_HCIUNBLOCKADDR, <<A,B,C,D,E,F>>).
+unblock(Hci,Addr) when is_port(Hci) ->
+    case bt:getaddr(Addr) of
+	{ok, {A,B,C,D,E,F}} ->
+	    port_call(Hci, ?CMD_HCIUNBLOCKADDR, <<F,E,D,C,B,A>>);
+	Error ->
+	    Error
+    end.
+
+%% Timeout is in millisecs but is converted into 1.28s units
+%% 1 len = 1.28s = 1280 ms
+inquiry(Hci, Timeout, NumRsp, Lap0, Flags) ->
+    Len = (Timeout div 1280) + (if Timeout rem 1280 =:= 0 -> 0; true -> 1 end),
+    Lap = if Lap0 =:= 0; Lap0 =:= <<>> -> <<16#33,16#8b,16#9e>>;
+	      byte_size(Lap0) =:= 3 -> Lap0
+	  end,
+    Args = <<Len, NumRsp, Lap/binary, Flags:32>>,
+    case port_call(Hci, ?CMD_HCIINQUIRY, Args) of
+	{ok, Bin} ->
+	    {ok, [hci_api:decode_inquiry_info(Info) ||
+		     <<Info:?INQUIRY_INFO_SIZE/binary>> <= Bin]};
+	Error ->
+	    Error
+    end.
+    
 
 -spec deactivate(Hci::hci_socket_t()) -> ok | {error,posix()}.
 
@@ -393,15 +414,15 @@ level(alert) -> ?DLOG_ALERT;
 level(emergency) -> ?DLOG_EMERGENCY;
 level(none) -> ?DLOG_NONE.
 
-%%
+%% note: bluetooth addresses are reversed in hci
 decode_hci_dev_info(
-  <<Dev_id:16, Name0:8/binary, A,B,C,D,E,F,
+  <<Dev_id:16, Name0:8/binary, F,E,D,C,B,A,
     Flags:32,  Type:8, Features:8/binary,
     Pkt_type:32, Link_policy:32, Link_mode:32, 
     Acl_mtu:16, Acl_pkts:16, 
     Sco_mtu:16, Sco_pkts:16,
     Stat/binary>>) ->
-    Name = c_string(Name0),
+    Name = hci_util:c_string(Name0),
     BdAddr = {A,B,C,D,E,F},
     S = decode_hci_dev_stats(Stat),
     #hci_dev_info {
@@ -440,8 +461,9 @@ decode_hci_dev_stats(
        byte_rx = Byte_rx,
        byte_tx = Byte_tx }.
 
+%% bdaddr is reverse in hci
 decode_hci_conn_info(<<Handle:16,
-		       A,B,C,D,E,F,
+		       F,E,D,C,B,A,
 		       Type:8, Out:8,
 		       State:16, Link_mode:32>>) ->
     #hci_conn_info { handle=Handle, bdaddr={A,B,C,D,E,F},
@@ -465,74 +487,6 @@ decode_hci_filter(<<Type_mask:32, Event0:32, Event1:32, Opcode:16>>) ->
     #hci_filter { type_mask = Type_mask,
 		  event_mask = Event_mask,
 		  opcode = Opcode }.
-
-format_hci_dev_info(#hci_dev_info {
-		      dev_id = _Dev_id,
-		      name = Name,
-		      bdaddr = BdAddr,
-		      flags = Flags,
-		      type = Type,
-		      features = _Features,
-		      pkt_type = _Pkt_type,
-		      link_policy = _Link_policy,
-		      link_mode = _Link_mode,
-		      acl_mtu = Acl_mtu,
-		      acl_pkts = Acl_pkts,
-		      sco_mtu = Sco_mtu,
-		      sco_pkts = Sco_pkts,
-		      stat = S}) ->
-    %% what field?
-    Bus = find_enum_name(Type band 16#0f, kv_dev_bus(), "UNKNOWN"), 
-    Type1 = find_enum_name((Type band 16#30) bsr 4, kv_dev_type(), "UNKNOWN"),
-    io_lib:format(
-      "~s:	Type: ~s  Bus: ~s\n"
-      "\tBD Address: ~s  ACL MTU: ~w:~w  SCO MTU: ~w:~w\n"
-      "\t~s\n"
-      "~s\n",
-      [Name, Type1, Bus,
-       bt:format_address(BdAddr),
-       Acl_mtu, Acl_pkts, Sco_mtu, Sco_pkts,
-       format_bits(Flags, kv_hci_dev_info_flags()),
-       format_hci_dev_stats(S)]).
-    
-
-format_hci_dev_stats(#hci_dev_stats {
-			 err_rx = Err_rx,
-			 err_tx = Err_tx,
-			 cmd_tx = Cmd_tx,
-			 evt_rx = Evt_rx,
-			 acl_tx = Acl_tx,
-			 acl_rx = Acl_rx,
-			 sco_tx = Sco_tx,
-			 sco_rx = Sco_rx,
-			 byte_rx = Byte_rx,
-			 byte_tx = Byte_tx }) ->
-    io_lib:format(
-      "\tRX bytes:~w acl:~w sco:~w events:~w errors:~w\n"
-      "\tTX bytes:~w acl:~w sco:~w commands:~w errors:~w",
-      [Byte_rx, Acl_rx, Sco_rx, Evt_rx, Err_rx,
-       Byte_tx, Acl_tx, Sco_tx, Cmd_tx, Err_tx]).
-
-format_enum(Value, Kv) ->
-    case lists:keyfind(Value, 2, Kv) of
-        false -> "";
-        {Name, Value} -> Name
-    end.
-
-format_bits(Value, KvList) ->
-    format_bits_(Value, KvList, []).
-
-format_bits_(0, _Kv, Acc) ->
-    string:join(lists:reverse(Acc), ",");
-format_bits_(Value, [{Key,Bits}|Kv], Acc) ->
-    if Value band Bits =:= Bits ->
-            format_bits_(Value band (bnot Bits),Kv,[Key|Acc]);
-       true ->
-            format_bits_(Value, Kv, Acc)
-    end;
-format_bits_(Value, [], Acc) ->
-    Acc1 = [integer_to_list(Value) | Acc],
-    string:join(lists:reverse(Acc1), ",").
 
 %% given a list of atoms/strings/integers
 %% build a bitmask from the values
@@ -558,135 +512,3 @@ set_bits([Bits|Names], Flags, Acc) when is_integer(Bits) ->
     set_bits(Names, Flags, Bits bor Acc);
 set_bits([], _Flags, Acc) ->
     Acc.
-
-find_enum_name(Value, Flags, Default) when is_integer(Value) ->
-    case lists:keyfind(Value, 2, Flags) of
-	false -> Default;
-	{Name, _Value} -> Name
-    end.
-
-find_enum_name(Value, Flags) ->
-    case find_enum_name(Value, Flags, undefined) of
-	undefined -> erlang:error(badarg);
-	Name -> Name
-    end.
-	    
-find_enum_value(Name, Flags, Default) when is_atom(Name) ->
-    case lists:keyfind(atom_to_list(Name), 1, Flags) of
-	false -> Default;
-	{_, Value} -> Value
-    end;
-find_enum_value(Name, Flags, Default) when is_list(Name) ->
-    case lists:keyfind(Name, 1, Flags) of
-	false -> Default;
-	{_, Value} -> Value
-    end.
-
-find_enum_value(Name, Flags) ->
-    case find_enum_value(Name, Flags, undefined) of
-	undefined -> erlang:error(badarg);
-	Value -> Value
-    end.
-
-c_string(Data) when is_binary(Data) ->
-    c_string_(binary_to_list(Data));
-c_string(Data) when is_list(Data) ->
-    c_string_(Data).
-
-c_string_([0|_]) -> [];
-c_string_([H|T]) -> [H|c_string_(T)].
-
-kv_dev_type() ->
-[
- {"BR/EDR",      ?HCI_BREDR},
- {"AMP",         ?HCI_AMP}
-].
-
-kv_dev_bus() ->
-[
- {"VIRTUAL",?HCI_VIRTUAL},
- {"USB", ?HCI_USB },
- {"PCCARD", ?HCI_PCCARD },
- {"UART", ?HCI_UART },
- {"RS232",?HCI_RS232},
- {"PCI", ?HCI_PCI},
- {"SDIO", ?HCI_SDIO}
-].
-    
-
-%% scan modes
-kv_scan() ->
-[
- { "OFF",       ?SCAN_DISABLED },
- { "ISCAN",     ?SCAN_INQUIRY },
- { "PSCAN",     ?SCAN_PAGE },
- { "PISCAN",    ?SCAN_PAGE bor ?SCAN_INQUIRY }
-].
-
-%% HCI device flags
-kv_hci_dev_info_flags() ->
-[
- { "UP",      (1 bsl ?HCI_UP) },
- { "INIT",    (1 bsl ?HCI_INIT) },
- { "RUNNING", (1 bsl ?HCI_RUNNING) },
- { "PSCAN",   (1 bsl ?HCI_PSCAN) },
- { "ISCAN",   (1 bsl ?HCI_ISCAN) },
- { "AUTH",    (1 bsl ?HCI_AUTH) },
- { "ENCRYPT", (1 bsl ?HCI_ENCRYPT) },
- { "INQUIRY", (1 bsl ?HCI_INQUIRY) },
- { "RAW",     (1 bsl ?HCI_RAW) }
-].
-
-kv_pkt_ptype() ->
-[
- { "DM1",   ?HCI_DM1  },
- { "DM3",   ?HCI_DM3  },
- { "DM5",   ?HCI_DM5  },
- { "DH1",   ?HCI_DH1  },
- { "DH3",   ?HCI_DH3  },
- { "DH5",   ?HCI_DH5  },
- { "HV1",   ?HCI_HV1  },
- { "HV2",   ?HCI_HV2  },
- { "HV3",   ?HCI_HV3  },
- { "2-DH1", ?HCI_2DH1 },
- { "2-DH3", ?HCI_2DH3 },
- { "2-DH5", ?HCI_2DH5 },
- { "3-DH1", ?HCI_3DH1 },
- { "3-DH3", ?HCI_3DH3 },
- { "3-DH5", ?HCI_3DH5 }
-].
-
-kv_sco_ptype() ->
-[
- { "HV1",   16#0001   },
- { "HV2",   16#0002   },
- { "HV3",   16#0004   },
- { "EV3",   ?HCI_EV3  },
- { "EV4",   ?HCI_EV4  },
- { "EV5",   ?HCI_EV5  },
- { "2-EV3", ?HCI_2EV3 },
- { "2-EV5", ?HCI_2EV5 },
- { "3-EV3", ?HCI_3EV3 },
- { "3-EV5", ?HCI_3EV5 }
-].
-
-kv_link_policy() ->
-[
- { "NONE",       0               },
- { "RSWITCH",    ?HCI_LP_RSWITCH  },
- { "HOLD",       ?HCI_LP_HOLD     },
- { "SNIFF",      ?HCI_LP_SNIFF    },
- { "PARK",       ?HCI_LP_PARK     }
-].
-
-kv_link_mode() ->
-[
- { "NONE",       0               },
- { "ACCEPT",     ?HCI_LM_ACCEPT   },
- { "MASTER",     ?HCI_LM_MASTER   },
- { "AUTH",       ?HCI_LM_AUTH     },
- { "ENCRYPT",    ?HCI_LM_ENCRYPT  },
- { "TRUSTED",    ?HCI_LM_TRUSTED  },
- { "RELIABLE",   ?HCI_LM_RELIABLE },
- { "SECURE",     ?HCI_LM_SECURE   }
-].

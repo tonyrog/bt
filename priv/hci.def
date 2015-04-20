@@ -70,6 +70,13 @@
 {define, 'HCI_SIMPLE_PAIRING_NOT_SUPPORTED',	16#37}.
 {define, 'HCI_HOST_BUSY_PAIRING',		16#38}.
 
+%% Types
+{type, bdaddr_t,    {uint8_t,6}}.
+{type, hci_qos_t,   {uint8_t,17}}.
+%% {type, dev_class_t, {uint8_t,3}}.
+%% {type, lap_t,       {uint8_t,3}}.
+
+
 %% -----  HCI Commands ----- 
 
 %% Link Control 
@@ -78,16 +85,16 @@
 {define, 'OCF_INQUIRY',			16#0001}.
 {struct,inquiry_cp,
  [
-  {uint8_t, 3, lap},
-  {uint8_t, length},		%% 1.28s units 
-  {uint8_t, num_rsp}
+	{{uint8_t,3}, lap},
+	{uint8_t, length},		%% 1.28s units 
+	{uint8_t, num_rsp}
  ]}.
 {define, 'INQUIRY_CP_SIZE', 5}.
 
 {struct, status_bdaddr_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'STATUS_BDADDR_RP_SIZE', 7}.
 
@@ -98,7 +105,7 @@
  [
 	{uint16_t,	max_period},	%% 1.28s units 
 	{uint16_t,	min_period},	%% 1.28s units 
-	{uint8_t, 3,	lap},
+	{{uint8_t,3},	lap},
 	{uint8_t,	length},		%% 1.28s units 
 	{uint8_t,	num_rsp}
 ]}.
@@ -109,7 +116,7 @@
 {define, 'OCF_CREATE_CONN',			16#0005}.
 {struct, create_conn_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint16_t,	pkt_type},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_mode},
@@ -137,14 +144,14 @@
 {define, 'OCF_CREATE_CONN_CANCEL',		16#0008}.
 {struct, create_conn_cancel_cp,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'CREATE_CONN_CANCEL_CP_SIZE', 6}.
 
 {define, 'OCF_ACCEPT_CONN_REQ',		16#0009}.
 {struct, accept_conn_req_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	role}
 ]}.
 {define, 'ACCEPT_CONN_REQ_CP_SIZE',	7}.
@@ -152,7 +159,7 @@
 {define, 'OCF_REJECT_CONN_REQ',		16#000A}.
 {struct, reject_conn_req_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	reason}
 ]}.
 {define, 'REJECT_CONN_REQ_CP_SIZE',	7}.
@@ -160,24 +167,24 @@
 {define, 'OCF_LINK_KEY_REPLY',		16#000B}.
 {struct, link_key_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
-	{uint8_t, 16,	link_key}
+	{bdaddr_t, 	bdaddr},
+        {{uint8_t,16},	link_key}
 ]}.
 {define, 'LINK_KEY_REPLY_CP_SIZE', 22}.
 
 {define, 'OCF_LINK_KEY_NEG_REPLY',		16#000C}.
 {struct, link_key_neg_reply_cp,
  [
-  {uint8_t, 6, 	bdaddr}
+        {bdaddr_t, bdaddr}
  ]}.
 {define, 'LINK_KEY_NEG_REPLY_CP_SIZE', 6}.
 
 {define, 'OCF_PIN_CODE_REPLY',		16#000D}.
 {struct, pin_code_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pin_len},
-	{uint8_t, 16,	pin_code}
+	{{uint8_t,16},	pin_code}
 ]}.
 {define, 'PIN_CODE_REPLY_CP_SIZE', 23}.
 
@@ -223,7 +230,7 @@
 {define, 'OCF_REMOTE_NAME_REQ',		16#0019}.
 {struct, remote_name_req_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_mode},
 	{uint16_t,	clock_offset}
@@ -233,7 +240,7 @@
 {define, 'OCF_REMOTE_NAME_REQ_CANCEL',	16#001A}.
 {struct, remote_name_req_cancel_cp,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'REMOTE_NAME_REQ_CANCEL_CP_SIZE', 6}.
 
@@ -284,7 +291,7 @@
 {define, 'OCF_ACCEPT_SYNC_CONN_REQ',	16#0029}.
 {struct, accept_sync_conn_req_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint32_t,	tx_bandwith},
 	{uint32_t,	rx_bandwith},
 	{uint16_t,	max_latency},
@@ -297,7 +304,7 @@
 {define, 'OCF_REJECT_SYNC_CONN_REQ',	16#002A}.
 {struct, reject_sync_conn_req_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	reason}
 ]}.
 {define, 'REJECT_SYNC_CONN_REQ_CP_SIZE', 7}.
@@ -305,7 +312,7 @@
 {define, 'OCF_IO_CAPABILITY_REPLY',		16#002B}.
 {struct, io_capability_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	capability},
 	{uint8_t,	oob_data},
 	{uint8_t,	authentication}
@@ -315,7 +322,7 @@
 {define, 'OCF_USER_CONFIRM_REPLY',		16#002C}.
 {struct, user_confirm_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'USER_CONFIRM_REPLY_CP_SIZE', 6}.
 
@@ -324,7 +331,7 @@
 {define, 'OCF_USER_PASSKEY_REPLY',		16#002E}.
 {struct, user_passkey_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint32_t,	passkey}
 ]}.
 {define, 'USER_PASSKEY_REPLY_CP_SIZE', 10}.
@@ -334,9 +341,9 @@
 {define, 'OCF_REMOTE_OOB_DATA_REPLY',	16#0030}.
 {struct, remote_oob_data_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
-	{uint8_t, 16,	hash},
-	{uint8_t, 16,	randomizer}
+	{bdaddr_t, 	bdaddr},
+	{{uint8_t,16},	hash},
+	{{uint8_t,16},	randomizer}
 ]}.
 {define, 'REMOTE_OOB_DATA_REPLY_CP_SIZE', 38}.
 
@@ -345,7 +352,7 @@
 {define, 'OCF_IO_CAPABILITY_NEG_REPLY',	16#0034}.
 {struct, io_capability_neg_reply_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	reason}
 ]}.
 {define, 'IO_CAPABILITY_NEG_REPLY_CP_SIZE', 7}.
@@ -356,7 +363,7 @@
 	{uint8_t,	handle},
 	{uint8_t,	key_length},
 	{uint8_t,	key_type},
-	{uint8_t, 32,	key}
+	{{uint8_t,32},	key}
 ]}.
 {define, 'CREATE_PHYSICAL_LINK_CP_SIZE', 35}.
 
@@ -374,8 +381,8 @@
 {struct, create_logical_link_cp,
  [
 	{uint8_t,	handle},
-	{uint8_t, 16,	tx_flow},
-	{uint8_t, 16,	rx_flow}
+	{{uint8_t,16},	tx_flow},
+	{{uint8_t,16},	rx_flow}
 ]}.
 {define, 'CREATE_LOGICAL_LINK_CP_SIZE', 33}.
 
@@ -465,7 +472,7 @@
  [
 	{uint16_t, 	handle},
 	{uint8_t,	flags},			%% Reserved 
-	{hci_qos, 	qos}
+	{hci_qos_t, 	qos}
 ]}.
 {define, 'QOS_SETUP_CP_SIZE', "(3 + ?HCI_QOS_CP_SIZE)"}.
 
@@ -486,7 +493,7 @@
 {define, 'OCF_SWITCH_ROLE',			16#000B}.
 {struct, switch_role_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	role}
 ]}.
 {define, 'SWITCH_ROLE_CP_SIZE', 7}.
@@ -541,7 +548,7 @@
 {define, 'OCF_SET_EVENT_MASK',		16#0001}.
 {struct, set_event_mask_cp,
  [
-	{uint8_t, 8,	mask}
+	{{uint8_t,8},	mask}
 ]}.
 {define, 'SET_EVENT_MASK_CP_SIZE', 8}.
 
@@ -552,7 +559,7 @@
  [
 	{uint8_t,	flt_type},
 	{uint8_t,	cond_type},
-	{uint8_t, 0,	condition}
+	{{uint8_t,0},	condition}
 ]}.
 {define, 'SET_EVENT_FLT_CP_SIZE', 2}.
 
@@ -594,7 +601,7 @@
 {define, 'OCF_READ_STORED_LINK_KEY',	16#000D}.
 {struct, read_stored_link_key_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	read_all}
 ]}.
 {define, 'READ_STORED_LINK_KEY_CP_SIZE', 7}.
@@ -623,7 +630,7 @@
 {define, 'OCF_DELETE_STORED_LINK_KEY',	16#0012}.
 {struct, delete_stored_link_key_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	delete_all}
 ]}.
 {define, 'DELETE_STORED_LINK_KEY_CP_SIZE', 7}.
@@ -639,7 +646,7 @@
 {define, 'OCF_CHANGE_LOCAL_NAME',		16#0013}.
 {struct, change_local_name_cp,
  [
-	{char, "?HCI_MAX_NAME_LENGTH",	name}
+	{{char,"?HCI_MAX_NAME_LENGTH"},	name}
 ]}.
 {define, 'CHANGE_LOCAL_NAME_CP_SIZE', 248}.
 
@@ -647,7 +654,7 @@
 {struct, read_local_name_rp,
  [
 	{uint8_t,	status},
-        {char, "?HCI_MAX_NAME_LENGTH",	name}
+        {{char, "?HCI_MAX_NAME_LENGTH"}, name}
 ]}.
 {define, 'READ_LOCAL_NAME_RP_SIZE', 249}.
 
@@ -731,28 +738,28 @@
 {define, 'OCF_READ_AUTH_ENABLE',		16#001F}.
 
 {define, 'OCF_WRITE_AUTH_ENABLE',		16#0020}.
-	{define, 'AUTH_DISABLED',		16#00}.
-	{define, 'AUTH_ENABLED',		16#01}.
+    {define, 'AUTH_DISABLED',  16#00}.
+    {define, 'AUTH_ENABLED',   16#01}.
 
 {define, 'OCF_READ_ENCRYPT_MODE',		16#0021}.
 
 {define, 'OCF_WRITE_ENCRYPT_MODE',		16#0022}.
-	{define, 'ENCRYPT_DISABLED',	16#00}.
-	{define, 'ENCRYPT_P2P',		16#01}.
-	{define, 'ENCRYPT_BOTH',		16#02}.
+    {define, 'ENCRYPT_DISABLED',	16#00}.
+    {define, 'ENCRYPT_P2P',		16#01}.
+    {define, 'ENCRYPT_BOTH',		16#02}.
 
 {define, 'OCF_READ_CLASS_OF_DEV',		16#0023}.
 {struct, read_class_of_dev_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 3,	dev_class}
+	{{uint8_t,3},	dev_class}
 ]}.
 {define, 'READ_CLASS_OF_DEV_RP_SIZE', 4}.
 
 {define, 'OCF_WRITE_CLASS_OF_DEV',		16#0024}.
 {struct, write_class_of_dev_cp,
  [
-	{uint8_t, 3,	dev_class}
+	{{uint8_t,3},	dev_class}
 ]}.
 {define, 'WRITE_CLASS_OF_DEV_CP_SIZE', 3}.
 
@@ -818,7 +825,8 @@
 {struct, host_num_comp_pkts_cp,
  [
 	{uint8_t,	num_hndl}
-	%% variable length part 
+        %% variable length part
+        %% {list, num_hndl, uint16_t, hndls}
 ]}.
 {define, 'HOST_NUM_COMP_PKTS_CP_SIZE', 1}.
 
@@ -851,9 +859,10 @@
 {define, 'OCF_READ_CURRENT_IAC_LAP',	16#0039}.
 {struct, read_current_iac_lap_rp,
  [
-	{uint8_t,	status},
-	{uint8_t,	num_current_iac},
-	{uint8_t, "3*?MAX_IAC_LAP",	lap}
+	{uint8_t,       status},
+        {uint8_t,       num_current_iac},
+        %% {list,num_current_iac,{binary,3},"?MAX_IAC_LAP",lap}
+        {{uint8_t,"3*?MAX_IAC_LAP"},	lap}
 ]}.
 {define, 'READ_CURRENT_IAC_LAP_RP_SIZE', "2+3*?MAX_IAC_LAP"}.
 
@@ -861,7 +870,8 @@
 {struct, write_current_iac_lap_cp,
  [
 	{uint8_t,	num_current_iac},
-	{uint8_t, "3*?MAX_IAC_LAP",	lap}
+        %% {list,num_current_iac,{binary,3},"?MAX_IAC_LAP",lap}
+	{{uint8_t,"3*?MAX_IAC_LAP"},	lap}
 ]}.
 {define, 'WRITE_CURRENT_IAC_LAP_CP_SIZE', "1+3*?MAX_IAC_LAP"}.
 
@@ -876,7 +886,7 @@
 {define, 'OCF_SET_AFH_CLASSIFICATION',	16#003F}.
 {struct, set_afh_classification_cp,
  [
-	{uint8_t, 10,	map}
+	{{uint8_t,10},	map}
 ]}.
 {define, 'SET_AFH_CLASSIFICATION_CP_SIZE', 10}.
 {struct, set_afh_classification_rp,
@@ -928,8 +938,8 @@
 {define, 'OCF_READ_PAGE_SCAN_TYPE',		16#0046}.
 
 {define, 'OCF_WRITE_PAGE_SCAN_TYPE',	16#0047}.
-	{define, 'PAGE_SCAN_TYPE_STANDARD',		16#00}.
-	{define, 'PAGE_SCAN_TYPE_INTERLACED',	16#01}.
+{define, 'PAGE_SCAN_TYPE_STANDARD',	16#00}.
+{define, 'PAGE_SCAN_TYPE_INTERLACED',	16#01}.
 
 {define, 'OCF_READ_AFH_MODE',		16#0048}.
 {struct, read_afh_mode_rp,
@@ -958,20 +968,20 @@
  [
 	{uint8_t,	status},
 	{uint8_t,	fec},
-	{uint8_t, "?HCI_MAX_EIR_LENGTH",	data}
+	{{uint8_t,"?HCI_MAX_EIR_LENGTH"}, data}
 ]}.
 {define, 'READ_EXT_INQUIRY_RESPONSE_RP_SIZE', 242}.
 
 {define, 'OCF_WRITE_EXT_INQUIRY_RESPONSE',	16#0052}.
 {struct, write_ext_inquiry_response_cp,
  [
-	{uint8_t,	fec},
-	{uint8_t, "?HCI_MAX_EIR_LENGTH",	data}
+	{uint8_t,       fec},
+	{{uint8_t,"?HCI_MAX_EIR_LENGTH"}, data}
 ]}.
 {define, 'WRITE_EXT_INQUIRY_RESPONSE_CP_SIZE', 241}.
 {struct, write_ext_inquiry_response_rp,
  [
-	{uint8_t,	status}
+	{uint8_t,       status}
 ]}.
 {define, 'WRITE_EXT_INQUIRY_RESPONSE_RP_SIZE', 1}.
 
@@ -1011,8 +1021,8 @@
 {struct, read_local_oob_data_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 16,	hash},
-	{uint8_t, 16,	randomizer}
+	{{uint8_t,16},	hash},
+	{{uint8_t,16},	randomizer}
 ]}.
 {define, 'READ_LOCAL_OOB_DATA_RP_SIZE', 33}.
 
@@ -1075,7 +1085,7 @@
 {define, 'OCF_SEND_KEYPRESS_NOTIFY',	16#0060}.
 {struct, send_keypress_notify_cp,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	type}
 ]}.
 {define, 'SEND_KEYPRESS_NOTIFY_CP_SIZE', 7}.
@@ -1178,7 +1188,7 @@
 {struct, read_local_commands_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 64,	commands}
+	{{uint8_t,64},	commands}
 ]}.
 {define, 'READ_LOCAL_COMMANDS_RP_SIZE', 65}.
 
@@ -1186,7 +1196,7 @@
 {struct, read_local_features_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'READ_LOCAL_FEATURES_RP_SIZE', 9}.
 
@@ -1201,7 +1211,7 @@
 	{uint8_t,	status},
 	{uint8_t,	page_num},
 	{uint8_t,	max_page_num},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'READ_LOCAL_EXT_FEATURES_RP_SIZE', 11}.
 
@@ -1222,7 +1232,7 @@
 {struct, read_bd_addr_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'READ_BD_ADDR_RP_SIZE', 7}.
 
@@ -1270,7 +1280,7 @@
 	{uint8_t,	status},
 	{uint16_t,	handle},
 	{uint8_t,	mode},
-	{uint8_t, 10,	map}
+	{{uint8_t,10},	map}
 ]}.
 {define, 'READ_AFH_MAP_RP_SIZE', 14}.
 
@@ -1320,7 +1330,7 @@
 	{uint8_t,	status},
 	{uint8_t,	handle},
 	{uint16_t,	rem_len},
-	{uint8_t, 0,	frag}
+	{{uint8_t,0},	frag}
 ]}.
 
 {define, 'OCF_WRITE_REMOTE_AMP_ASSOC',	16#000B}.
@@ -1329,7 +1339,7 @@
 	{uint8_t,	handle},
 	{uint16_t,	length_so_far},
 	{uint16_t,	assoc_length},
-	{char, "?HCI_MAX_NAME_LENGTH", fragment}
+	{{char, "?HCI_MAX_NAME_LENGTH"}, fragment}
 ]}.
 {define, 'WRITE_REMOTE_AMP_ASSOC_CP_SIZE', 253}.
 {struct, write_remote_amp_assoc_rp,
@@ -1342,9 +1352,9 @@
 %% Testing commands 
 {define, 'OGF_TESTING_CMD',		16#3e}.
 
-{define, 'OCF_READ_LOOPBACK_MODE',			16#0001}.
+{define, 'OCF_READ_LOOPBACK_MODE',	16#0001}.
 
-{define, 'OCF_WRITE_LOOPBACK_MODE',			16#0002}.
+{define, 'OCF_WRITE_LOOPBACK_MODE',	16#0002}.
 
 {define, 'OCF_ENABLE_DEVICE_UNDER_TEST_MODE',	16#0003}.
 
@@ -1366,7 +1376,7 @@
 {define, 'OCF_LE_SET_EVENT_MASK',			16#0001}.
 {struct, le_set_event_mask_cp,
  [
-	{uint8_t, 8,	mask}
+	{{uint8_t,8},	mask}
 ]}.
 {define, 'LE_SET_EVENT_MASK_CP_SIZE', 8}.
 
@@ -1383,14 +1393,14 @@
 {struct, le_read_local_supported_features_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'LE_READ_LOCAL_SUPPORTED_FEATURES_RP_SIZE', 9}.
 
 {define, 'OCF_LE_SET_RANDOM_ADDRESS',		16#0005}.
 {struct, le_set_random_address_cp,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'LE_SET_RANDOM_ADDRESS_CP_SIZE', 6}.
 
@@ -1402,7 +1412,7 @@
 	{uint8_t,	advtype},
 	{uint8_t,	own_bdaddr_type},
 	{uint8_t,	direct_bdaddr_type},
-	{uint8_t, 6, 	direct_bdaddr},
+	{bdaddr_t, 	direct_bdaddr},
 	{uint8_t,	chan_map},
 	{uint8_t,	filter}
 ]}.
@@ -1420,7 +1430,7 @@
 {struct, le_set_advertising_data_cp,
  [
 	{uint8_t,	length},
-	{uint8_t, 31,	data}
+	{{uint8_t,31},	data}
 ]}.
 {define, 'LE_SET_ADVERTISING_DATA_CP_SIZE', 32}.
 
@@ -1428,7 +1438,7 @@
 {struct, le_set_scan_response_data_cp,
  [
 	{uint8_t,	length},
-	{uint8_t, 31,	data}
+	{{uint8_t,31},	data}
 ]}.
 {define, 'LE_SET_SCAN_RESPONSE_DATA_CP_SIZE', 32}.
 
@@ -1465,7 +1475,7 @@
 	{uint16_t,	window},
 	{uint8_t,	initiator_filter},
 	{uint8_t,	peer_bdaddr_type},
-	{uint8_t, 6, 	peer_bdaddr},
+	{bdaddr_t, 	peer_bdaddr},
 	{uint8_t,	own_bdaddr_type},
 	{uint16_t,	min_interval},
 	{uint16_t,	max_interval},
@@ -1492,7 +1502,7 @@
 {struct, le_add_device_to_white_list_cp,
  [
 	{uint8_t,	bdaddr_type},
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'LE_ADD_DEVICE_TO_WHITE_LIST_CP_SIZE', 7}.
 
@@ -1500,7 +1510,7 @@
 {struct, le_remove_device_from_white_list_cp,
  [
 	{uint8_t,	bdaddr_type},
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'LE_REMOVE_DEVICE_FROM_WHITE_LIST_CP_SIZE', 7}.
 
@@ -1520,7 +1530,7 @@
 {define, 'OCF_LE_SET_HOST_CHANNEL_CLASSIFICATION',	16#0014}.
 {struct, le_set_host_channel_classification_cp,
  [
-	{uint8_t, 5,	map}
+	{{uint8_t,5},	map}
 ]}.
 {define, 'LE_SET_HOST_CHANNEL_CLASSIFICATION_CP_SIZE', 5}.
 
@@ -1534,7 +1544,7 @@
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
-	{uint8_t, 5,	map}
+	{{uint8_t,5},	map}
 ]}.
 {define, 'LE_READ_CHANNEL_MAP_RP_SIZE', 8}.
 
@@ -1548,14 +1558,14 @@
 {define, 'OCF_LE_ENCRYPT',				16#0017}.
 {struct, le_encrypt_cp,
  [
-	{uint8_t, 16,	key},
-	{uint8_t, 16,	plaintext}
+	{{uint8_t,16},	key},
+	{{uint8_t,16},	plaintext}
 ]}.
 {define, 'LE_ENCRYPT_CP_SIZE', 32}.
 {struct, le_encrypt_rp,
  [
 	{uint8_t,	status},
-	{uint8_t, 16,	data}
+	{{uint8_t,16},	data}
 ]}.
 {define, 'LE_ENCRYPT_RP_SIZE', 17}.
 
@@ -1573,7 +1583,7 @@
 	{uint16_t,	handle},
 	{uint64_t,	random},
 	{uint16_t,	diversifier},
-	{uint8_t, 16,	key}
+	{{uint8_t,16},	key}
 ]}.
 {define, 'LE_START_ENCRYPTION_CP_SIZE', 28}.
 
@@ -1581,7 +1591,7 @@
 {struct, le_ltk_reply_cp,
  [
 	{uint16_t,	handle},
-	{uint8_t, 16,	key}
+	{{uint8_t,16},	key}
 ]}.
 {define, 'LE_LTK_REPLY_CP_SIZE', 18}.
 {struct, le_ltk_reply_rp,
@@ -1646,11 +1656,11 @@
 {define, 'EVT_INQUIRY_RESULT',		16#02}.
 {struct, inquiry_info,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_period_mode},
 	{uint8_t,	pscan_mode},
-	{uint8_t, 3,	dev_class},
+	{{uint8_t,3},	dev_class},
 	{uint16_t,	clock_offset}
 ]}.
 {define, 'INQUIRY_INFO_SIZE', 14}.
@@ -1660,7 +1670,7 @@
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	link_type},
 	{uint8_t,	encr_mode}
 ]}.
@@ -1669,8 +1679,8 @@
 {define, 'EVT_CONN_REQUEST',		16#04}.
 {struct, evt_conn_request,
  [
-	{uint8_t, 6, 	bdaddr},
-	{uint8_t, 3,	dev_class},
+	{bdaddr_t, 	bdaddr},
+	{{uint8_t,3},	dev_class},
 	{uint8_t,	link_type}
 ]}.
 {define, 'EVT_CONN_REQUEST_SIZE', 10}.
@@ -1696,8 +1706,8 @@
 {struct, evt_remote_name_req_complete,
  [
 	{uint8_t,	status},
-	{uint8_t, 6, 	bdaddr},
-	{char, "?HCI_MAX_NAME_LENGTH", name}
+	{bdaddr_t, 	bdaddr},
+	{{char,"?HCI_MAX_NAME_LENGTH"}, name}
 ]}.
 {define, 'EVT_REMOTE_NAME_REQ_COMPLETE_SIZE', 255}.
 
@@ -1732,7 +1742,7 @@
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'EVT_READ_REMOTE_FEATURES_COMPLETE_SIZE', 11}.
 
@@ -1753,7 +1763,7 @@
 	{uint8_t,	status},
 	{uint16_t,	handle},
 	{uint8_t,	flags},			%% Reserved 
-	{hci_qos,	qos}
+	{hci_qos_t,	qos}
 ]}.
 {define, 'EVT_QOS_SETUP_COMPLETE_SIZE', "(4 + ?HCI_QOS_CP_SIZE)"}.
 
@@ -1792,7 +1802,7 @@
 {struct, evt_role_change,
  [
 	{uint8_t,	status},
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	role}
 ]}.
 {define, 'EVT_ROLE_CHANGE_SIZE', 8}.
@@ -1802,6 +1812,7 @@
  [
 	{uint8_t,	num_hndl}
 	%% variable length part 
+        %% {list, num_hndl, uint16_t, hndls}
 ]}.
 {define, 'EVT_NUM_COMP_PKTS_SIZE', 1}.
 
@@ -1819,29 +1830,30 @@
 {struct, evt_return_link_keys,
  [
 	{uint8_t,	num_keys}
-	%% variable length part 
+	%% variable length part
+        %% {list, num_keys, {binary,16}, keys}
 ]}.
 {define, 'EVT_RETURN_LINK_KEYS_SIZE', 1}.
 
 {define, 'EVT_PIN_CODE_REQ',		16#16}.
 {struct, evt_pin_code_req,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_PIN_CODE_REQ_SIZE', 6}.
 
 {define, 'EVT_LINK_KEY_REQ',		16#17}.
 {struct, evt_link_key_req,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_LINK_KEY_REQ_SIZE', 6}.
 
 {define, 'EVT_LINK_KEY_NOTIFY',		16#18}.
 {struct, evt_link_key_notify,
  [
-	{uint8_t, 6, 	bdaddr},
-	{uint8_t, 16,	link_key},
+	{bdaddr_t, 	bdaddr},
+	{{uint8_t,16},	link_key},
 	{uint8_t,	key_type}
 ]}.
 {define, 'EVT_LINK_KEY_NOTIFY_SIZE', 23}.
@@ -1891,7 +1903,7 @@
 {define, 'EVT_PSCAN_REP_MODE_CHANGE',	16#20}.
 {struct, evt_pscan_rep_mode_change,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode}
 ]}.
 {define, 'EVT_PSCAN_REP_MODE_CHANGE_SIZE', 7}.
@@ -1903,28 +1915,28 @@
 	{uint16_t,	handle},
 	{uint8_t,	flags},
 	{uint8_t,	direction},
-	{hci_qos,	qos}
+	{hci_qos_t,	qos}
 ]}.
 {define, 'EVT_FLOW_SPEC_COMPLETE_SIZE', "(5 + ?HCI_QOS_CP_SIZE)"}.
 
 {define, 'EVT_INQUIRY_RESULT_WITH_RSSI',	16#22}.
 {struct, inquiry_info_with_rssi,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_period_mode},
-	{uint8_t, 3,	dev_class},
+	{{uint8_t,3},	dev_class},
 	{uint16_t,	clock_offset},
 	{int8_t,	rssi}
 ]}.
 {define, 'INQUIRY_INFO_WITH_RSSI_SIZE', 14}.
 {struct, inquiry_info_with_rssi_and_pscan_mode,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_period_mode},
 	{uint8_t,	pscan_mode},
-	{uint8_t, 3,	dev_class},
+	{{uint8_t,3},	dev_class},
 	{uint16_t,	clock_offset},
 	{int8_t,	rssi}
 ]}.
@@ -1937,7 +1949,7 @@
 	{uint16_t,	handle},
 	{uint8_t,	page_num},
 	{uint8_t,	max_page_num},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'EVT_READ_REMOTE_EXT_FEATURES_COMPLETE_SIZE', 13}.
 
@@ -1946,7 +1958,7 @@
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	link_type},
 	{uint8_t,	trans_interval},
 	{uint8_t,	retrans_window},
@@ -1983,13 +1995,13 @@
 {define, 'EVT_EXTENDED_INQUIRY_RESULT',	16#2F}.
 {struct, extended_inquiry_info,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	pscan_rep_mode},
 	{uint8_t,	pscan_period_mode},
-	{uint8_t, 3,	dev_class},
+	{{uint8_t,3},	dev_class},
 	{uint16_t,	clock_offset},
 	{int8_t,	rssi},
-	{uint8_t, "?HCI_MAX_EIR_LENGTH",	data}
+	{{uint8_t,"?HCI_MAX_EIR_LENGTH"}, data}
 ]}.
 {define, 'EXTENDED_INQUIRY_INFO_SIZE', 254}.
 
@@ -2004,14 +2016,14 @@
 {define, 'EVT_IO_CAPABILITY_REQUEST',	16#31}.
 {struct, evt_io_capability_request,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_IO_CAPABILITY_REQUEST_SIZE', 6}.
 
 {define, 'EVT_IO_CAPABILITY_RESPONSE',	16#32}.
 {struct, evt_io_capability_response,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	capability},
 	{uint8_t,	oob_data},
 	{uint8_t,	authentication}
@@ -2021,7 +2033,7 @@
 {define, 'EVT_USER_CONFIRM_REQUEST',	16#33}.
 {struct, evt_user_confirm_request,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint32_t,	passkey}
 ]}.
 {define, 'EVT_USER_CONFIRM_REQUEST_SIZE', 10}.
@@ -2029,14 +2041,14 @@
 {define, 'EVT_USER_PASSKEY_REQUEST',	16#34}.
 {struct, evt_user_passkey_request,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_USER_PASSKEY_REQUEST_SIZE', 6}.
 
 {define, 'EVT_REMOTE_OOB_DATA_REQUEST',	16#35}.
 {struct, evt_remote_oob_data_request,
  [
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_REMOTE_OOB_DATA_REQUEST_SIZE', 6}.
 
@@ -2044,7 +2056,7 @@
 {struct, evt_simple_pairing_complete,
  [
 	{uint8_t,	status},
-	{uint8_t, 6, 	bdaddr}
+	{bdaddr_t, 	bdaddr}
 ]}.
 {define, 'EVT_SIMPLE_PAIRING_COMPLETE_SIZE', 7}.
 
@@ -2066,7 +2078,7 @@
 {define, 'EVT_USER_PASSKEY_NOTIFY',		16#3B}.
 {struct, evt_user_passkey_notify,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint32_t,	passkey},
 	{uint8_t,	entered}
 ]}.
@@ -2075,7 +2087,7 @@
 {define, 'EVT_KEYPRESS_NOTIFY',		16#3C}.
 {struct, evt_keypress_notify,
  [
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	type}
 ]}.
 {define, 'EVT_KEYPRESS_NOTIFY_SIZE', 7}.
@@ -2083,8 +2095,8 @@
 {define, 'EVT_REMOTE_HOST_FEATURES_NOTIFY',	16#3D}.
 {struct, evt_remote_host_features_notify,
  [
-	{uint8_t, 6, 	bdaddr},
-	{uint8_t, 8,	features}
+	{bdaddr_t, 	bdaddr},
+	{{uint8_t,8},	features}
 ]}.
 {define, 'EVT_REMOTE_HOST_FEATURES_NOTIFY_SIZE', 14}.
 
@@ -2092,7 +2104,7 @@
 {struct, evt_le_meta_event,
  [
 	{uint8_t,	subevent},
-	{uint8_t, 0,	data}
+	{{uint8_t,0},	data}
 ]}.
 {define, 'EVT_LE_META_EVENT_SIZE', 1}.
 
@@ -2103,7 +2115,7 @@
 	{uint16_t,	handle},
 	{uint8_t,	role},
 	{uint8_t,	peer_bdaddr_type},
-	{uint8_t, 6, 	peer_bdaddr},
+	{bdaddr_t, 	peer_bdaddr},
 	{uint16_t,	interval},
 	{uint16_t,	latency},
 	{uint16_t,	supervision_timeout},
@@ -2116,9 +2128,9 @@
  [
 	{uint8_t,	evt_type},
 	{uint8_t,	bdaddr_type},
-	{uint8_t, 6, 	bdaddr},
+	{bdaddr_t, 	bdaddr},
 	{uint8_t,	length},
-	{uint8_t, 0,	data}
+	{{uint8_t,0},	data}
 ]}.
 {define, 'LE_ADVERTISING_INFO_SIZE', 9}.
 
@@ -2138,7 +2150,7 @@
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
-	{uint8_t, 8,	features}
+	{{uint8_t,8},	features}
 ]}.
 {define, 'EVT_LE_READ_REMOTE_USED_FEATURES_COMPLETE_SIZE', 11}.
 
@@ -2224,7 +2236,7 @@
 {struct, evt_stack_internal,
  [
 	{uint16_t,	type},
-	{uint8_t, 0,	data}
+	{{uint8_t,0},	data}
 ]}.
 {define, 'EVT_STACK_INTERNAL_SIZE', 2}.
 

@@ -58,6 +58,7 @@ typedef struct _hci_drv_ctx_t {
     int              active;    
     int              is_selecting;
     int              is_sending;
+    int              dev_id;        // bound device id 
     void*            hcibuf;
     size_t           hcibuf_len;
 } hci_drv_ctx_t;
@@ -572,6 +573,7 @@ static ErlDrvSSizeT hci_drv_ctl(ErlDrvData d,unsigned int cmd,char* buf0,
 
       if (bind(INT_EVENT(ctx->fd), (struct sockaddr *) &a, sizeof(a)) < 0)
 	goto error;
+      ctx->dev_id = dev_id;
       goto ok;
     }
 
@@ -722,19 +724,15 @@ static ErlDrvSSizeT hci_drv_ctl(ErlDrvData d,unsigned int cmd,char* buf0,
 	sizeof(struct hci_conn_info);
       uint8_t lbuf[sizeof(struct hci_conn_info)];
       uint8_t* lptr;
-      bdaddr_t bdaddr;
-      uint8_t  type;
 
       if (len != 7)
 	goto badarg;
-      memcpy(&bdaddr, buf, sizeof(bdaddr));
-      type = buf[6];
       
       if ((ci = hci_drv_realloc_buffer(ctx, sz)) == NULL)
 	goto error;
       memset(ci, 0, sz);
-      ci->bdaddr = bdaddr;
-      ci->type = type;
+      memcpy(&ci->bdaddr, buf, sizeof(bdaddr_t));
+      ci->type = buf[6];
 
       if (ioctl(INT_EVENT(ctx->fd), HCIGETCONNINFO, (void *)ci) < 0)
 	goto error;
@@ -880,7 +878,26 @@ static ErlDrvSSizeT hci_drv_ctl(ErlDrvData d,unsigned int cmd,char* buf0,
 
     case CMD_HCIINQUIRY: {
       // blocking! must be in a thread or use the async api
-      goto badarg;
+      uint8_t ibuf[sizeof(struct hci_inquiry_req)+sizeof(inquiry_info)*255];
+      struct hci_inquiry_req* ir;
+
+      if (len != 9)
+	goto badarg;
+      ir = (struct hci_inquiry_req *) ibuf;
+      ir->length = get_uint8(buf);
+      ir->num_rsp = get_uint8(buf+1);
+      ir->lap[0]  = get_uint8(buf+2);
+      ir->lap[1]  = get_uint8(buf+3);
+      ir->lap[2]  = get_uint8(buf+4);
+      ir->flags   = get_uint32(buf+5);
+      ir->dev_id  = ctx->dev_id;
+
+      if (ioctl(INT_EVENT(ctx->fd), HCIINQUIRY, (unsigned long) ibuf) < 0)
+	goto error;
+
+      // return size is sizoef(inquiry_info) * ir->num_rsp
+      return ctl_reply(CTL_BIN, ibuf + sizeof(struct hci_inquiry_req),
+		       sizeof(inquiry_info) * ir->num_rsp, rbuf, rsize);
     }
 
     default:

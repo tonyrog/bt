@@ -30,7 +30,7 @@
 -include("../include/hci_drv.hrl").
 -include("hci_api.hrl").
 
--record(state, 
+-record(state,
 	{
 	  hci :: hci_socket_t(),
 	  devid :: hci_devid_t(),
