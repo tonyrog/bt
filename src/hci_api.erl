@@ -66,7 +66,7 @@ decode_delete_stored_link_key_rp(_Data) ->
 decode_read_local_name_rp(_Data) ->
   case _Data of
     <<?read_local_name_rp_bin(Status,Name)>> ->
-      #read_local_name_rp { status = Status,name = cname(Name) }
+      #read_local_name_rp { status = Status,name = Name }
   end.
 
 decode_read_conn_accept_timeout_rp(_Data) ->
@@ -474,7 +474,7 @@ decode_evt_auth_complete(_Data) ->
 decode_evt_remote_name_req_complete(_Data) ->
   case _Data of
     <<?evt_remote_name_req_complete_bin(Status,Bdaddr,Name)>> ->
-      #evt_remote_name_req_complete { status = Status,bdaddr = Bdaddr,name = cname(Name) }
+      #evt_remote_name_req_complete { status = Status,bdaddr = Bdaddr,name = Name }
   end.
 
 decode_evt_encrypt_change(_Data) ->

@@ -13,9 +13,20 @@
 inquiry() ->
     with_socket(0, fun(S) -> inquiry(S) end).
 
+pinquiry() ->
+    with_socket(0, fun(S) -> pinquiry(S) end).    
+
+%% scan for 10*1.28 seconds, wait for max 5 replies
 inquiry(Hci) ->
     Lap = <<16#33,16#8b,16#9e>>,
-    hci_api:inquiry(Hci, Lap, 10, 2).
+    hci_api:inquiry(Hci, Lap, 10, 5).
+
+%% scan for 10*1.28 seconds, wait for max 5 replies
+pinquiry(Hci) ->
+    Lap = <<16#33,16#8b,16#9e>>,
+    Max = 100, Min = 50, 
+    hci_api:periodic_inquiry(Hci, Max, Min, Lap, 10, 2).
+
 
 local_name() -> local_name(0).
 local_name(DevID) ->
