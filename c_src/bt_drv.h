@@ -79,6 +79,7 @@ typedef struct _bt_ctx_t
     size_t remain;          // remaining bytes to read
     uint8_t* packet;          // the data packet being built
     subscription_list_t list;
+    void* drv_data;            // Extra, per-driver specific data.
 } bt_ctx_t;
 
 #define LISTEN_QUEUE_LENGTH 8  /* max connections can only be 7 ? */
