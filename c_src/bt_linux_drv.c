@@ -304,15 +304,11 @@ static void cleanup(subscription_t* s)
     case RFCOMM: {
 	bt_poll_del(PTR2INT(s->handle));
 	close(PTR2INT(s->handle));
-	s->opaque = 0;
-	release_subscription(s);
 	break;
     }
     case RFCOMM_LISTEN: {
 	bt_poll_del(PTR2INT(s->handle));
 	close(PTR2INT(s->handle));
-	s->opaque = 0;
-	release_subscription(s);
 	break;
     }
     case L2CAP: break;
@@ -375,13 +371,13 @@ static void send_event(uint32_t sid, const char* evtname)
 static void rfcomm_running(struct pollfd* pfd, void* arg)
 {
     subscription_t* s = arg;
+    uint8_t buf[1024];
+    uint8_t bt_data[800];
+    int32_t bt_data_len;
+    ddata_t data;
+
 
     if (pfd->revents & POLLIN) {  // input ready
-	uint8_t buf[1024];
-	uint8_t bt_data[800];
-	int32_t bt_data_len;
-	ddata_t data;
-
 	DEBUGF("rfcomm_running: %d has input", PTR2INT(s->handle));
 
 	bt_data_len = read(pfd->fd, bt_data, sizeof(bt_data));
@@ -398,6 +394,21 @@ static void rfcomm_running(struct pollfd* pfd, void* arg)
 	ddata_final(&data);
     }
 
+    if (pfd->revents & POLLHUP) {  // close
+	DEBUGF("rfcomm_running: %d Hangup", PTR2INT(s->handle));
+ 	ddata_init(&data, buf, sizeof(buf), 0);
+	ddata_put_UINT32(&data, 0);
+	ddata_put_tag(&data, REPLY_EVENT);
+	ddata_put_UINT32(&data, s->id);
+	ddata_put_atom(&data, "closed");
+	ddata_send(&data, 1);
+	ddata_final(&data);
+
+	release_subscription(s);
+	bt_poll_del(pfd->fd);
+	shutdown(pfd->fd, 2);
+	close(pfd->fd);
+    }
     if (pfd->revents & POLLOUT) {  // output ready
 	DEBUGF("rfcomm_running: %d may output", PTR2INT(s->handle));
 	// FIXME: Send additional pending data.
@@ -435,7 +446,7 @@ static void rfcomm_accept(struct pollfd* pfd, void* arg)
 
     /* send EVENT id {accept,Address,Channel} */
 	
-    bt_poll_add(client, POLLIN, rfcomm_running, accept_s);
+    bt_poll_add(client, POLLIN | POLLHUP, rfcomm_running, accept_s);
     accept_s->handle = INT2PTR(client);
 
     ddata_init(&data, buf, sizeof(buf), 0);
@@ -445,7 +456,7 @@ static void rfcomm_accept(struct pollfd* pfd, void* arg)
     ddata_put_tag(&data, TUPLE);
     ddata_put_atom(&data, "accept");
     ddata_put_addr(&data, &rem_addr.rc_bdaddr);
-    ddata_put_uint8(&data, PTR2INT(accept_s->accept->opaque));
+    ddata_put_uint8(&data, PTR2INT(accept_s->handle));
     ddata_put_tag(&data, TUPLE_END);
     ddata_send(&data, 1);
     ddata_final(&data);
@@ -591,6 +602,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		goto bt_error;
 	    }
 	}
+
 	if ((s = new_subscription(RFCOMM,sid,cmdid,0,cleanup)) == NULL) {
 	    close(sock);
 	    goto mem_error;
@@ -710,10 +722,10 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if ((s = new_subscription(RFCOMM,sid,cmdid,NULL,cleanup)) == NULL)
 	    goto mem_error;
 
-	s->accept = listen;  // mark that we are accepting
+	// s->accept = listen;  // mark that we are accepting
 
 	bt_poll_add(PTR2INT(listen->handle), POLLIN, rfcomm_accept, s); 
-
+	s->handle = listen->opaque;
 	insert_last(&ctx->list, s);
 
 	ddata_put_tag(&data_out, REPLY_OK);
@@ -745,23 +757,23 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 		unlink_subscription(link);
 		goto done;
 	    }
-	    else if (s->accept != NULL) {
-		listen_queue_t* lq = (listen_queue_t*)((s->accept)->opaque);
-		remove_subscription(&lq->wait,RFCOMM,sid);
-		unlink_subscription(link);
-		goto ok;
-	    }
+	    /* else if (s->accept != NULL) { */
+	    /* 	listen_queue_t* lq = (listen_queue_t*)((s->accept)->opaque); */
+	    /* 	remove_subscription(&lq->wait,RFCOMM,sid); */
+	    /* 	unlink_subscription(link); */
+	    /* 	goto ok; */
+	    /* } */
 	}
 	else if ((link = find_subscription_link(&ctx->list,RFCOMM_LISTEN,sid)) != NULL) {
-	    subscription_t* listen = link->s;
-	    listen_queue_t* lq = (listen_queue_t*)listen->opaque;
-	    subscription_link_t* link1;
-	    /* remove all waiters */
-	    while((link1=lq->wait.first) != NULL) {
-		send_event(link1->s->id, "closed");
-		unlink_subscription(link1);
-	    }
-	    unlink_subscription(link);
+	    /* subscription_t* listen = link->s; */
+	    /* listen_queue_t* lq = (listen_queue_t*)listen->opaque; */
+	    /* subscription_link_t* link1; */
+	    /* /\* remove all waiters *\/ */
+	    /* while((link1=lq->wait.first) != NULL) { */
+	    /* 	send_event(link1->s->id, "closed"); */
+	    /* 	unlink_subscription(link1); */
+	    /* } */
+	    /* unlink_subscription(link); */
 	    goto ok;
 	}
 	goto error;
