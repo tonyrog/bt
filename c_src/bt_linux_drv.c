@@ -288,10 +288,10 @@ static void ddata_put_io_error(ddata_t* data, int errnum, int type)
 static void cleanup(subscription_t* s)
 {
     DEBUGF("cleanup: %s", format_subscription(s));
-    drv_data_t* lctx = (drv_data_t*) s->handle;
-
+ 
     switch(s->type) {
     case INQUIRY: {
+	drv_data_t* lctx = (drv_data_t*) s->handle;
 	bt_poll_del(lctx->inquiry_fd);
 	close(lctx->inquiry_fd);
 
@@ -307,7 +307,9 @@ static void cleanup(subscription_t* s)
     case SDP_QUERY: break;
     case SDP: break;
     case RFCOMM: {
+	DEBUGF("cleanup: Disabling and closing descriptor %d", PTR2INT(s->handle));
 	bt_poll_del(PTR2INT(s->handle));
+	shutdown(PTR2INT(s->handle), 2); // Very likely not necessary at all
 	close(PTR2INT(s->handle));
 	break;
     }
@@ -485,6 +487,7 @@ static void rfcomm_accept(struct pollfd* pfd, void* arg)
     bt_poll_add(client_des, POLLIN | POLLHUP, rfcomm_running, accept_s);
 
     accept_s->handle = INT2PTR(client_des);
+    accept_s->accept = 0; // We are now a regular RFCOMM connection.
 
     getsockname(client_des, (struct sockaddr *)&loc_addr, &alen);
 
@@ -776,7 +779,6 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    goto mem_error;
 
 	s->accept = listen_s;  // mark that we are accepting
-	s->opaque = listen_s;
 
 	// Are we the first acceptor added to the listen
 	// descriptor? If so, enable it.
@@ -813,16 +815,16 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	if ((link = find_subscription_link(&ctx->list,RFCOMM,sid)) != NULL) {
 	    subscription_t* s = link->s;
 	    int sock;
+	    DEBUGF("CMD_RFCOMM_CLOSE found RFCOMM link", cmdid);
 	    s->cmdid = cmdid;
 	    sock = PTR2INT(s->handle);
 	    if (sock >= 0) {
 		DEBUGF("RFCOMM_CLOSE: channel=%d", sock);
-		bt_poll_del(sock);
-		close(sock);
-		unlink_subscription(link);
-		goto done;
+		unlink_subscription(link); // Will close and unlink s->handle
+		goto ok;
 	    }
 	    else if (s->accept != NULL) { 
+		DEBUGF("RFCOMM_CLOSE: This is an acceptor with no session");
 		linux_listen_queue_t* lq = (linux_listen_queue_t*)((s->accept)->opaque); 
 		remove_subscription(&lq->acceptors,RFCOMM,sid); 
 		unlink_subscription(link); 
@@ -833,6 +835,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    subscription_t* listen = link->s;
 	    linux_listen_queue_t* lq = (linux_listen_queue_t*)listen->opaque;
 	    subscription_link_t* link1; 
+	    DEBUGF("RFCOMM_CLOSE: This is a listen subscriuber");
 	    /* remove all waiters */
 	    while((link1=lq->acceptors.first) != NULL) { 
 	     	send_event(link1->s->id, "closed"); 
@@ -841,6 +844,7 @@ void bt_command(bt_ctx_t* ctx, const uint8_t* src, uint32_t src_len)
 	    unlink_subscription(link);
 	    goto ok;
 	}
+	    DEBUGF("RFCOMM_CLOSE: Shit");
 	goto error;
     }
 
@@ -1045,7 +1049,7 @@ void read_callback(struct pollfd* pfd, void* data)
     int fd = pfd->fd;
     int n;
 
-    DEBUGF("read_callback: %d", pfd->fd);
+    DEBUGF("read_callback: %d:%X", pfd->fd, pfd->revents);
 
     if (pfd->revents & POLLHUP)  {
 	DEBUGF("hangup");
