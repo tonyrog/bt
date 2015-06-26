@@ -54,6 +54,8 @@
 	 rfcomm_send/2,
 	 rfcomm_listen/1,
 	 rfcomm_accept/1,
+	 rfcomm_accept/2,
+	 rfcomm_accept/3,
 	 rfcomm_mtu/1,
 	 rfcomm_channel/1,
 	 rfcomm_address/1]).
@@ -410,7 +412,10 @@ rfcomm_accept(ListenRef) ->
     rfcomm_accept(ListenRef, infinity).
 
 rfcomm_accept(ListenRef, Timeout) ->
-    gen_server:call(?SERVER, {rfcomm_accept,self(),ListenRef,Timeout}).
+    rfcomm_accept(ListenRef, Timeout, self()).
+
+rfcomm_accept(ListenRef, Timeout, CtlPid) ->
+    gen_server:call(?SERVER, {rfcomm_accept, CtlPid, ListenRef, Timeout}).
 
 rfcomm_mtu(Ref) ->
     gen_server:call(?SERVER, {rfcomm_mtu, Ref}).    
@@ -476,7 +481,12 @@ stop() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    Driver = filename:join([code:priv_dir(bt),"bt"]),
+    PD = case code:priv_dir(bt) of
+	     { error, bad_name } -> "./priv/";
+	     Res -> Res
+	 end,
+	     
+    Driver = filename:join([PD,"bt"]),
     Port = open_port({spawn, Driver}, [{packet,4},binary,eof]),
     Reg = ets:new(btreg, [public, set, named_table]),
     {ok, #state{ bt_port = Port, reg = Reg }}.
@@ -781,7 +791,7 @@ handle_call({rfcomm_accept,Owner,Ref,_Timeout}, From, State) ->
 				?CMD_RFCOMM_ACCEPT, CmdId, Args,
 				{reply, EvtRef}),
 	    {noreply, State1};
-	false ->
+	_ ->
 	    {reply, {error, einval}, State}
     end;
 

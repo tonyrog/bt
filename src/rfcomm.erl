@@ -21,7 +21,13 @@
 
 -module(rfcomm).
 
--export([open/2, close/1, send/2, listen/1, accept/1, accept/2]).
+-export([open/2, 
+	 close/1, 
+	 send/2, 
+	 listen/1, 
+	 accept/1, 
+	 accept/2, 
+	 accept/3]).
 
 open(Address, Channel) ->
     bt_drv:rfcomm_open(Address, Channel).
@@ -36,9 +42,12 @@ listen(Channel) ->
     bt_drv:rfcomm_listen(Channel).
 
 accept(ListenRef) ->
-    bt_drv:rfcomm_accept(ListenRef).
+    accept(ListenRef, infinity, self() ).
 
-accept(ListenRef,Timeout) when Timeout==infinity; 
-			       is_integer(Timeout),Timeout>0 ->
-    bt_drv:rfcomm_accept(ListenRef,Timeout).
+accept(ListenRef, Timeout) ->
+    accept(ListenRef, Timeout, self()).
+
+accept(ListenRef,Timeout, CtlPid) when Timeout==infinity; 
+				       is_integer(Timeout),Timeout>0 ->
+    bt_drv:rfcomm_accept(ListenRef,Timeout, CtlPid).
 
