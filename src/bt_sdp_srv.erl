@@ -126,8 +126,6 @@ service_search_attribute(UUIDList,AttributeList)
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    {A,B,C} = now(),
-    random:seed(A,B,C),
     SDP = #serviceRecord { handle = 0,
 			   monitor = undefined,
 			   uuid_set=uuid_set(
@@ -283,7 +281,7 @@ del_monitor(Mon) when is_reference(Mon) ->
     erlang:demonitor(Mon).
 
 new_handle(State) ->
-    Handle = random:uniform(16#100000000)-1,
+    Handle = rand:uniform(16#100000000)-1,
     case lists:keysearch(Handle,#serviceRecord.handle,State#state.records) of
 	false ->
 	    Handle;

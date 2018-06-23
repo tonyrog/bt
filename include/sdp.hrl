@@ -139,19 +139,19 @@
 -define(UUID_PhonebookAccess_PSE, <<16#112F:16>>). %%Phonebook Access Profile
 -define(UUID_PhonebookAccess, <<16#1130:16>>). %% Phonebook Access Profile
 -define(UUID_Headset_HS, <<16#1131:16>>).           %% Headset Profile (HSP)
--define(UUID_Message_Access_Server, <<16#1132>>).   %%	Message Access Profile (MAP)
--define(UUID_Message_Notification_Server, <<16#1133>>).	%% Message Access Profile (MAP)
--define(UUID_Message_Access_Profile, <<16#1134>>).  %% Message Access Profile (MAP)
--define(UUID_GNSS, <<16#1135>>).  %% Global Navigation Satellite System Profile (GNSS)
--define(UUID_GNSS_Server, <<16#1136>>). %%	Global Navigation Satellite System Profile (GNSS)
--define(UUID_3D_Display, <<16#1137>>).	%% 3D Synchronization Profile (3DSP)
--define(UUID_3D_Glasses, <<16#1138>>).	 %% 3D Synchronization Profile (3DSP)
--define(UUID_3D_Synchronization, <<16#1139>>). %% 3D Synchronization Profile (3DSP)
--define(UUID_MPS_Profile, <<16#113A>>). %% Multi-Profile Specification (MPS)
--define(UUID_MPS_SC, <<16#113B>>). %% Multi-Profile Specification (MPS)
--define(UUID_CTN_Access_Service, <<16#113C>>). %% Calendar, Task, and Notes (CTN)
--define(UUID_CTN_Notification_Service, <<16#113D>>). %%	Calendar Tasks and Notes (CTN)
--define(UUID_CTN_Profile, <<16#113E>>). %% Calendar Tasks and Notes (CTN) Profile
+-define(UUID_Message_Access_Server, <<16#1132:16>>).   %%	Message Access Profile (MAP)
+-define(UUID_Message_Notification_Server, <<16#1133:16>>).	%% Message Access Profile (MAP)
+-define(UUID_Message_Access_Profile, <<16#1134:16>>).  %% Message Access Profile (MAP)
+-define(UUID_GNSS, <<16#1135:16>>).  %% Global Navigation Satellite System Profile (GNSS)
+-define(UUID_GNSS_Server, <<16#1136:16>>). %%	Global Navigation Satellite System Profile (GNSS)
+-define(UUID_3D_Display, <<16#1137:16>>).	%% 3D Synchronization Profile (3DSP)
+-define(UUID_3D_Glasses, <<16#1138:16>>).	 %% 3D Synchronization Profile (3DSP)
+-define(UUID_3D_Synchronization, <<16#1139:16>>). %% 3D Synchronization Profile (3DSP)
+-define(UUID_MPS_Profile, <<16#113A:16>>). %% Multi-Profile Specification (MPS)
+-define(UUID_MPS_SC, <<16#113B:16>>). %% Multi-Profile Specification (MPS)
+-define(UUID_CTN_Access_Service, <<16#113C:16>>). %% Calendar, Task, and Notes (CTN)
+-define(UUID_CTN_Notification_Service, <<16#113D:16>>). %%	Calendar Tasks and Notes (CTN)
+-define(UUID_CTN_Profile, <<16#113E:16>>). %% Calendar Tasks and Notes (CTN) Profile
 -define(UUID_PnPInformation, <<16#1200:16>>).
 -define(UUID_GenericNetworking, <<16#1201:16>>).
 -define(UUID_GenericFileTransfer, <<16#1202:16>>).
