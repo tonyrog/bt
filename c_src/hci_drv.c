@@ -160,7 +160,7 @@ ErlDrvTermData am_false;
     } while(0)
 
 
-ErlDrvEntry hci_drv_entry;
+static ErlDrvEntry hci_drv_entry;
 
 static inline uint32_t get_uint32(uint8_t* ptr)
 {
@@ -981,6 +981,7 @@ DRIVER_INIT(hci_drv)
 {
     ErlDrvEntry* ptr = &hci_drv_entry;
 
+    memset(ptr, 0, sizeof(ErlDrvEntry));
     ptr->driver_name = "hci_drv";
     ptr->init  = hci_drv_init;
     ptr->start = hci_drv_start;
@@ -991,19 +992,10 @@ DRIVER_INIT(hci_drv)
     ptr->finish = hci_drv_finish;
     ptr->control = hci_drv_ctl;
     ptr->timeout = hci_drv_timeout;
-#if 0
-    ptr->outputv = hci_drv_outputv;
-#endif
-    ptr->ready_async = 0;
-    ptr->flush = 0;
-    ptr->call = 0;
-    ptr->event = 0;
     ptr->extended_marker = ERL_DRV_EXTENDED_MARKER;
     ptr->major_version = ERL_DRV_EXTENDED_MAJOR_VERSION;
     ptr->minor_version = ERL_DRV_EXTENDED_MINOR_VERSION;
     ptr->driver_flags = ERL_DRV_FLAG_USE_PORT_LOCKING;
-    ptr->process_exit = 0;
     ptr->stop_select = hci_drv_stop_select;
-
     return (ErlDrvEntry*) ptr;
 }
