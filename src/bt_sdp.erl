@@ -40,6 +40,8 @@
 -export([encode_pdu/2,encode_pdu/3,
 	 decode_pdu/1]).
 
+-export([info/1, info/2]).
+
 -import(lists, [reverse/1, map/2]).
 
 -include("../include/bt.hrl").
@@ -56,6 +58,28 @@
 -define(SDP_ALTERNATIVE, 7).
 -define(SDP_URL,         8).
 
+info(Address) ->
+    case service_search(Address, ["l2cap"]) of
+	{ok,#sdpServiceSearchResponse{serviceRecordHandleList=List}} ->
+	    [info(Address,Handle) || Handle <- List];
+	Error ->
+	    Error
+    end.
+
+info(Address,Handle) ->
+    case service_attribute(Address, Handle, 
+			   [?ATTR_ServiceDescription,
+%%			    ?ATTR_ProviderName,
+%%			    ?ATTR_ServiceID,
+%%			    ?ATTR_ServiceRecordState,
+			    ?ATTR_ProtocolDescriptorList
+			   ]) of
+	{ok, #sdpServiceAttributeResponse { attributeList = List }} ->
+	    [{attr16(A,<<A:16>>), decode_sdp_value(V)} || {A, V} <- List];
+	Error ->
+	    Error
+    end.
+		       
 
 %% L2CAP implementation of SDP query (will be)
 service_search(Address, UUIDList) ->
@@ -95,8 +119,8 @@ sdp_l2cap_request(L2CAP,Continuation,Acc,Request) ->
     io:format("Transaction ~w\n", [Transaction]),
     Bin = encode_pdu(Transaction,Continuation,Request),
     l2cap:send(L2CAP, Bin),
-    receive
-	{l2cap, L2CAP, {data,Data}} ->
+    case l2cap:recv(L2CAP) of
+	{ok,Data} ->
 	    case decode_pdu(Data,Acc) of
 		{ok,{Transaction,<<>>,_Acc1,
 		     #sdpErrorResponse { errorCode=ErrorCode,
@@ -110,8 +134,8 @@ sdp_l2cap_request(L2CAP,Continuation,Acc,Request) ->
 		Error ->
 		    Error
 	    end;
-	{l2cap, L2CAP, closed} ->
-	    {error, closed}
+	Error ->
+	    Error
     end.
 	    
 %%
@@ -721,7 +745,7 @@ uuid_128(<<UUID:32>>) -> ?BT_UUID32(UUID);
 uuid_128(<<>>) -> <<>>;
 uuid_128(UUID) when ?is_uuid(UUID) ->  UUID.
 
-%% Try convert UUID into symboic name
+%% Try convert UUID into symbolic name
 uuid_to_string(UUID) ->
     case uuid_128(UUID) of
 	UUID128 = ?BT_UUID16(UUID16) ->

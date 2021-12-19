@@ -15,6 +15,30 @@
 -define(DEFAULT_TIMEOUT, 5000).
 -define(INQUIRY_TIMEOUT, 10000).
 
+get_devices() ->
+    Hci = hci_drv:open(),
+    try get_devices_(Hci) of
+	L -> L
+    after
+	close(Hci)
+    end.
+
+get_devices_(Hci) ->
+    {ok,Devs} = hci_drv:get_dev_list(Hci),
+    get_devices_(Hci, Devs).
+
+get_devices_(Hci, [{DevID,_}|Ds]) ->
+    case hci_drv:get_dev_info(Hci, DevID) of
+	{ok,Info} ->
+	    [{Info#hci_dev_info.name,
+	      Info#hci_dev_info.bdaddr}|get_devices_(Hci, Ds)];
+	_Error ->
+	    get_devices_(Hci, Ds)
+    end;
+get_devices_(_Hci, []) ->
+    [].
+
+	    
 open(DevID) ->
     Hci = hci_drv:open(),
     case hci_drv:bind(Hci, DevID) of
@@ -288,10 +312,9 @@ with_socket(Fun) ->
 	Result ->
 	    Result
     catch
-	error:Error ->
+	error:Error:Stack ->
 	    io:format("hci: with_socket crash: ~p\n", [Error]),
-	    lists:foreach(fun(Item) -> print_item(Item) end,
-			  erlang:get_stacktrace()),
+	    lists:foreach(fun(Item) -> print_item(Item) end, Stack),
 	    {error,Error}
     after
 	close(S)
