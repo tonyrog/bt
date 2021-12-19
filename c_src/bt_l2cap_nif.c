@@ -1,0 +1,837 @@
+//
+// L2CAP
+//
+#include <stdio.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/l2cap.h>
+
+#include "erl_nif.h"
+#include "erl_driver.h"
+
+#define MAX_L2CAP_BUF 65536
+
+#define DEBUG
+#define NIF_TRACE
+
+#define UNUSED(a) ((void) a)
+
+#ifdef DEBUG
+#define DEBUGF(f,a...) enif_fprintf(stderr, f "\r\n", a)
+#else
+#define DEBUGF(f,a...)
+#endif
+#define ERRORF(f,a...) enif_fprintf(stderr, f "\r\n", a)
+#define BADARG(env) enif_fprintf(stderr, "%s: badarg line=%d\r\n", __FILE__, __LINE__), enif_make_badarg((env))
+
+#define UNUSED(a) ((void) a)
+
+#define ATOM(name) atm_##name
+
+#define DECL_ATOM(name) \
+    ERL_NIF_TERM atm_##name = 0
+
+// require env in context (ugly)
+#define LOAD_ATOM(name)			\
+    atm_##name = enif_make_atom(env,#name)
+
+#define LOAD_ATOM_STRING(name,string)		\
+    atm_##name = enif_make_atom(env,string)
+
+
+static int load(ErlNifEnv* env, void** priv_data,
+		       ERL_NIF_TERM load_info);
+static int upgrade(ErlNifEnv* env, void** priv_data,
+			  void** old_priv_data,
+		       ERL_NIF_TERM load_info);
+static void unload(ErlNifEnv* env, void* priv_data);
+
+// Dirty optional since 2.7 and mandatory since 2.12
+#if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
+#ifdef USE_DIRTY_SCHEDULER
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(0)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#endif
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#endif
+
+#define NIF_LIST \
+    NIF("open_", 0,  nif_open)  \
+    NIF("bind_", 3,  nif_bind)  \
+    NIF("close", 1, nif_close) \
+    NIF("listen_", 1, nif_listen) \
+    NIF("connect_", 3,  nif_connect)  \
+    NIF("accept_", 1, nif_accept) \
+    NIF("set_mtu", 2, nif_set_mtu) \
+    NIF("get_mtu", 1, nif_get_mtu) \
+    NIF("getsockname", 1, nif_getsockname) \
+    NIF("getpeername", 1, nif_getpeername) \
+    NIF("write_", 2, nif_write) \
+    NIF("read_", 1,  nif_read) \
+    NIF("select_", 2,  nif_select)
+
+static ErlNifResourceType* l2cap_r;
+
+typedef enum {
+    UNDEFINED   = 0x00,
+    OPEN        = 0x01,
+    CLOSING     = 0x02,
+    LISTEN      = 0x04,
+    BOUND       = 0x08,
+    CONNECTED   = 0x10,
+    CONNECTING  = 0x20,
+} hstate_t;
+
+typedef struct _handle_t {
+    ErlNifMutex*  access_mtx;
+    int           access_count;
+    struct sockaddr_l2 addr;      // peer address/connect/accept
+    hstate_t      state;
+    int           fd;
+} handle_t;
+
+DECL_ATOM(ok);
+DECL_ATOM(error);
+DECL_ATOM(undefined);
+DECL_ATOM(select);
+DECL_ATOM(read);
+DECL_ATOM(write);
+DECL_ATOM(no_such_handle);
+
+// Declare all nif functions
+#undef NIF
+#ifdef NIF_TRACE
+#define NIF(name, arity, func)						\
+    static ERL_NIF_TERM func(ErlNifEnv* env, int argc,const ERL_NIF_TERM argv[]); \
+    static ERL_NIF_TERM trace##_##func##_##arity(ErlNifEnv* env, int argc,const ERL_NIF_TERM argv[]);
+#else
+#define NIF(name, arity, func)						\
+    static ERL_NIF_TERM func(ErlNifEnv* env, int argc,const ERL_NIF_TERM argv[]);
+#endif
+
+NIF_LIST
+
+#undef NIF
+#ifdef NIF_TRACE
+#define NIF(name,arity,func) NIF_FUNC(name, arity, trace##_##func##_##arity),
+#else
+#define NIF(name,arity,func) NIF_FUNC(name, arity, func),
+#endif
+
+static ErlNifFunc nif_funcs[] =
+{
+    NIF_LIST
+};
+
+
+static void dtor(ErlNifEnv* env, handle_t* hp)
+{
+    UNUSED(env);
+
+    DEBUGF("dtor: hp=%p fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    if (hp->fd >= 0) {
+	close(hp->fd);
+	hp->fd = -1;
+	hp->state = UNDEFINED;
+    }
+}
+
+static void stop(ErlNifEnv* env, handle_t* hp,
+		 ErlNifEvent event, int is_direct_call)
+{
+    UNUSED(env);
+    UNUSED(is_direct_call);
+    DEBUGF("stop: hp=%p, fd=%d", hp, (intptr_t)event);
+    if ((hp->fd >= 0) && (hp->fd == (intptr_t)event)) {
+	close(hp->fd);
+	hp->fd = -1;
+	hp->state = UNDEFINED;
+    }	
+}
+
+static void down(ErlNifEnv* env, handle_t* hp,
+		 const ErlNifPid* pid, const ErlNifMonitor* mon)
+{
+    UNUSED(env);
+    UNUSED(pid);
+    UNUSED(mon);
+    UNUSED(hp);
+    DEBUGF("down: hp=%p, fd=%d", hp, (intptr_t)hp->fd);
+}
+
+static int get_handle(ErlNifEnv* env, ERL_NIF_TERM arg,handle_t** handle_ptr,
+		      hstate_t some, hstate_t none)
+{
+    handle_t* hp;
+    int r;
+
+    if (!enif_is_ref(env, arg))
+	return -1;  // badarg
+    if (!enif_get_resource(env, arg, l2cap_r, (void **)&hp))
+	return 0;   // no a valid reource handle / remove / closed
+    DEBUGF("get_handle: hp=%p, fd=%d, state=0x%x, some=%x, none=%x",
+	   hp, hp->fd, hp->state, some, none);
+    if (some && ((hp->state & some) == 0))
+	return -1;
+    if (none && ((~hp->state & none) == 0))
+	return -1;
+    enif_mutex_lock(hp->access_mtx);
+    if ((r = ((hp->state & OPEN) != 0)))
+	hp->access_count++;
+    enif_mutex_unlock(hp->access_mtx);
+    *handle_ptr = hp;
+    return r;
+}
+
+static void done_handle(ErlNifEnv* env, handle_t* hp)
+{
+    int must_close = 0;
+    DEBUGF("done_handle: access_count = %d", hp->access_count);    
+    enif_mutex_lock(hp->access_mtx);
+    hp->access_count--;
+    if ((hp->access_count == 0) && (hp->state == CLOSING))
+	must_close = 1;
+    enif_mutex_unlock(hp->access_mtx);
+    if (must_close) {
+	DEBUGF("done_handle: close", 0);
+	if ((hp->state == CONNECTED) ||
+	    (hp->state == CONNECTING) ||
+	    (hp->state == LISTEN)) {
+	    hp->state = CLOSING;
+	    enif_select(env, (ErlNifEvent)hp->fd,
+			ERL_NIF_SELECT_STOP,
+			hp, NULL, ATOM(undefined));
+	}
+	else if (hp->fd >= 0) {
+	    ERRORF("bt_l2cap: force closing %d", hp->fd); // for real?
+	    close(hp->fd);
+	    hp->state = UNDEFINED;
+	    hp->fd = -1;
+	}
+    }
+}
+
+static ERL_NIF_TERM make_error(ErlNifEnv* env, int err)
+{
+    DEBUGF("make_error: %d", err);
+    return enif_make_tuple2(env,
+			    ATOM(error),
+			    enif_make_atom(env, erl_errno_id(err)));
+}
+
+// Value must be return from NIF
+static ERL_NIF_TERM make_herror(ErlNifEnv* env, handle_t* handle, int err)
+{
+    DEBUGF("make_herror: %d", err);
+    done_handle(env, handle);
+    return make_error(env, err);
+}
+
+// Value must be return from NIF
+static ERL_NIF_TERM make_bad_handle(ErlNifEnv* env) {
+    DEBUGF("bad_handle%s", "");
+    return enif_make_tuple2(env, ATOM(error), ATOM(no_such_handle));
+}
+
+// Value must be return from NIF
+static ERL_NIF_TERM make_result(ErlNifEnv* env, handle_t* handle, ERL_NIF_TERM value) {
+    done_handle(env, handle);
+    return enif_make_tuple2(env, ATOM(ok), value);
+}
+
+// Value must be return from NIF
+static ERL_NIF_TERM make_ok(ErlNifEnv* env, handle_t* handle)
+{
+    UNUSED(env);
+    done_handle(env, handle);
+    return ATOM(ok);
+}
+
+// return 0 if error otherwise 1,2 or 3
+// 1 -  ...x  (last one digit)
+// 2 -  ..xy  (last two digits)
+// 2 -  x:..  (middl one digit)
+// 3 -  xy:..  (middl two digits)
+int get_hex_byte(char* ptr, char* ptr_end, int* value_ptr)
+{
+    uint8_t x = 0;
+    int c;
+
+    if (ptr >= ptr_end)
+	return 0;
+    c = *ptr++;
+    if ((c >= '0') && (c <= '9')) x = (c-'0');
+    else if ((c >= 'a') && (c <= 'f')) x = 10+(c-'a');
+    else if ((c >= 'A') && (c <= 'F')) x = 10+(c-'A');
+    else return 0;
+    if (ptr >= ptr_end) {
+	*value_ptr = x;
+	return 1;
+    }
+    c = *ptr++;
+    if ((c >= '0') && (c <= '9')) x = (x<<4) + (c-'0');
+    else if ((c >= 'a') && (c <= 'f')) x = (x<<4) + 10+(c-'a');
+    else if ((c >= 'A') && (c <= 'F')) x = (x<<4) + 10+(c-'A');
+    else if (c == ':') {
+	*value_ptr = x;
+	return 2;
+    }
+    else
+	return 0;
+    if (ptr >= ptr_end) {
+	*value_ptr = x;
+	return 2;
+    }
+    if (*ptr == ':') {
+	*value_ptr = x;
+	return 3;
+    }
+    return 0;
+}
+
+
+int get_bdaddr(ErlNifEnv* env, ERL_NIF_TERM arg, bdaddr_t* addr)
+{
+    ErlNifBinary bin;
+    const ERL_NIF_TERM* taddr;
+    int arity;
+
+    DEBUGF("get_bdaddr: %T", arg);
+    
+    if (enif_inspect_iolist_as_binary(env,arg,&bin)) {
+	if (bin.size == 6) { // assume binary address
+	    memcpy(addr->b, bin.data, bin.size);
+	    return 1;
+	}
+	else { // check for ascii encoded address
+	    char* ptr = (char*) bin.data;
+	    char* ptr_end = (char*) bin.data + bin.size;
+	    int i = 0;
+	    for (i = 0; i < 6; i++) {
+		int offs;
+		int b;
+		if ((offs = get_hex_byte(ptr, ptr_end, &b)) == 0)
+		    return 0;
+		addr->b[5-i] = b;
+		DEBUGF("b[%d] = %x", 5-i, b);
+		ptr += offs;
+	    }
+	    if (ptr == ptr_end)
+		return 1;
+	}
+	return 0;	
+    }
+    else if (enif_get_tuple(env, arg, &arity, &taddr) && (arity == 6)) {
+	int i, b;
+	for (i = 0; i < 6; i++) {
+	    if (!enif_get_int(env, taddr[i], &b))
+		return 0;
+	    addr->b[5-i] = b;
+	}
+	return 1;
+    }
+    return 0;
+}
+
+ERL_NIF_TERM make_bdaddr(ErlNifEnv* env, bdaddr_t* addr)
+{
+    return enif_make_tuple6(env,
+			    enif_make_int(env, addr->b[5]),
+			    enif_make_int(env, addr->b[4]),
+			    enif_make_int(env, addr->b[3]),
+			    enif_make_int(env, addr->b[2]),
+			    enif_make_int(env, addr->b[1]),
+			    enif_make_int(env, addr->b[0]));
+}
+
+int set_nonblock(int fd)
+{
+   int flags;
+#if defined(O_NONBLOCK)
+    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
+        flags = 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#else
+    flags = 1;
+    return ioctl(fd, FIOBIO, &flags);
+#endif
+}
+
+static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
+			     const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    UNUSED(argv);
+    handle_t* hp;
+    int fd;
+    ERL_NIF_TERM ht;
+    
+    if ((fd = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP))  < 0)
+	return make_error(env, errno);
+
+    if ((hp = enif_alloc_resource(l2cap_r, sizeof(handle_t))) == NULL) {
+	int err = errno;
+	close(fd);
+	return make_error(env, err);
+    }
+    DEBUGF("open_ hp = %p", hp);
+    if (set_nonblock(fd) < 0) {
+	int err = errno;
+	close(fd);
+	return make_error(env, err);
+    }
+    memset(hp, 0, sizeof(handle_t));
+    hp->access_mtx = enif_mutex_create("l2cp_access");
+    hp->fd = fd;
+    hp->state = OPEN;
+    ht = enif_make_resource(env, hp);
+    enif_release_resource(hp);
+    return enif_make_tuple2(env, ATOM(ok), ht);
+}
+
+// listen(Handle::ref(), Address::btaddress(), Psm::integer())
+static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
+			     const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;    
+    int psm;
+    struct sockaddr_l2 addr = { 0 };
+
+    if (!get_bdaddr(env, argv[1], &addr.l2_bdaddr))
+	return BADARG(env);
+    if (!enif_get_int(env, argv[2], &psm))
+	return BADARG(env);
+    addr.l2_family = AF_BLUETOOTH;
+    addr.l2_psm = htobs(psm);
+
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    DEBUGF("nif_bind: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    
+    if (bind(hp->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	return make_herror(env, hp, errno);
+    hp->state |= BOUND;  // set under lock?
+    return make_ok(env, hp);
+}
+
+// close(Handle::ref()) -> ok
+static ERL_NIF_TERM nif_close(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+
+    DEBUGF("nif_close: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+
+    enif_mutex_lock(hp->access_mtx);
+    if (hp->fd >= 0) {
+	hp->state |= CLOSING;
+	enif_select(env, (ErlNifEvent)((intptr_t)(hp->fd)),
+		    ERL_NIF_SELECT_STOP,
+		    hp, NULL, ATOM(undefined));
+    }
+    enif_mutex_unlock(hp->access_mtx);
+    done_handle(env, hp);
+    return ATOM(ok);
+}
+
+// connect(Handle::ref(), Address::btaddress(), Psm::integer())
+static ERL_NIF_TERM nif_connect(ErlNifEnv* env, int argc,
+				const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;    
+    int psm;
+    bdaddr_t bdaddr;    
+
+    if (!get_bdaddr(env, argv[1], &bdaddr))
+	return BADARG(env);
+    if (!enif_get_int(env, argv[2], &psm))
+	return BADARG(env);
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {  // BOUND?
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    memset(&hp->addr, 0, sizeof(hp->addr));
+    hp->addr.l2_family = AF_BLUETOOTH;
+    hp->addr.l2_psm = htobs(psm);
+    hp->addr.l2_bdaddr = bdaddr;
+
+    DEBUGF("nif_connect: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+
+    if (connect(hp->fd, (struct sockaddr *)&hp->addr, sizeof(hp->addr))  < 0) {
+	if (errno == EINPROGRESS)
+	    hp->state |= CONNECTING;
+	return make_herror(env, hp, errno);
+    }
+    hp->state = (hp->state & ~CONNECTING) | (hp->state & CONNECTED);
+    return make_ok(env, hp);
+}
+
+
+// accept(ListenHandle::ref()) -> {ok,Handle} | {error, Reason}
+static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
+			       const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    handle_t* hp1;
+    socklen_t opt = sizeof(struct sockaddr_l2);
+    ERL_NIF_TERM bdaddr, psm;
+    ERL_NIF_TERM ht;
+    int fd;
+
+    switch(get_handle(env, argv[0], &hp, LISTEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    fd = accept(hp->fd, (struct sockaddr*) &hp->addr, &opt);
+    if (fd < 0)
+	return make_herror(env, hp, errno);
+    if ((hp1 = enif_alloc_resource(l2cap_r, sizeof(handle_t))) == NULL) {
+	int err = errno;
+	close(fd);
+	return make_herror(env, hp, err);
+    }
+    memset(hp1, 0, sizeof(handle_t));
+    hp1->access_mtx = enif_mutex_create("l2cp_access");
+    hp1->fd = fd;
+    hp1->state |= CONNECTED;
+    hp1->addr = hp->addr;
+    ht = enif_make_resource(env, hp1);
+    enif_release_resource(hp1);
+    bdaddr = make_bdaddr(env, &hp1->addr.l2_bdaddr);
+    psm = enif_make_int(env, hp1->addr.l2_psm);
+    return make_result(env, hp,
+		       enif_make_tuple2(env, ht,
+					enif_make_tuple(env,bdaddr,psm)));
+}
+
+
+// listen(Handle::ref(), Address::btaddress(), Psm::integer())
+static ERL_NIF_TERM nif_listen(ErlNifEnv* env, int argc,
+			       const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;    
+
+    switch(get_handle(env, argv[0], &hp, BOUND, CONNECTING|CONNECTED)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    if (listen(hp->fd, 1) < 0)
+	return make_herror(env, hp, errno);
+    hp->state |= LISTEN;  // set under lock?
+    return make_ok(env, hp);
+}
+
+
+static ERL_NIF_TERM nif_getsockname(ErlNifEnv* env, int argc,
+				 const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    struct sockaddr_l2 addr;
+    socklen_t len;
+    ERL_NIF_TERM bdaddr, psm;
+
+    switch(get_handle(env, argv[0], &hp, BOUND, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    DEBUGF("nif_getsockname: hp=%p, fd=%d, state=0x%x",
+	   hp, hp->fd, hp->state);    
+    len = sizeof(addr);
+    if (getsockname(hp->fd, (struct sockaddr *) &addr, &len) < 0)
+	return make_herror(env, hp, errno);
+
+    bdaddr = make_bdaddr(env, &addr.l2_bdaddr);
+    psm = enif_make_int(env, addr.l2_psm);
+    return make_result(env, hp, enif_make_tuple2(env,bdaddr,psm));
+}
+
+static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
+				    const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);    
+    handle_t* hp;
+    struct sockaddr_l2 addr;
+    socklen_t len;
+    ERL_NIF_TERM bdaddr, psm;
+
+    switch(get_handle(env, argv[0], &hp, CONNECTED|CONNECTING, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    DEBUGF("nif_getpeername: hp=%p, fd=%d, state=0x%x", hp, hp->fd, hp->state);
+
+    len = sizeof(addr);
+    if (getpeername(hp->fd, (struct sockaddr *) &addr, &len) < 0)
+	return make_herror(env, hp, errno);
+    hp->state = (hp->state & ~CONNECTING) | CONNECTED;     // FIXME
+    bdaddr = make_bdaddr(env, &addr.l2_bdaddr);
+    psm = enif_make_int(env, addr.l2_psm);
+    return make_result(env, hp, enif_make_tuple2(env,bdaddr,psm));
+}
+
+
+static ERL_NIF_TERM nif_get_mtu(ErlNifEnv* env, int argc,
+				 const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    struct l2cap_options opts;
+    socklen_t optlen = sizeof(opts);
+
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }    
+    if (getsockopt(hp->fd, SOL_L2CAP, L2CAP_OPTIONS, &opts, &optlen ) < 0)
+	return make_herror(env, hp, errno);
+    return make_result(env, hp, enif_make_int(env, opts.omtu));
+}
+
+static ERL_NIF_TERM nif_set_mtu(ErlNifEnv* env, int argc,
+				 const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    struct l2cap_options opts;
+    socklen_t optlen = sizeof(opts);
+    int mtu;
+    int prev_omtu;
+
+    if (!enif_get_int(env, argv[1], &mtu))
+	return BADARG(env);    
+
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+
+    if (getsockopt(hp->fd, SOL_L2CAP, L2CAP_OPTIONS, &opts, &optlen ) < 0)
+	return make_herror(env, hp, errno);
+    prev_omtu = opts.omtu;
+    opts.omtu = opts.imtu = mtu;
+    if (setsockopt(hp->fd, SOL_L2CAP, L2CAP_OPTIONS, &opts, optlen ) < 0)
+	return make_herror(env, hp, errno);
+    return make_result(env, hp, enif_make_int(env, prev_omtu));
+}
+    
+// write(Handle::ref(), Data::binary())
+static ERL_NIF_TERM nif_write(ErlNifEnv* env, int argc,
+			      const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    ErlNifBinary binary;
+    int n = 0;
+
+    if (!enif_inspect_iolist_as_binary(env,argv[1],&binary))
+	return BADARG(env);    
+    
+    switch(get_handle(env, argv[0], &hp, CONNECTED, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    n = write(hp->fd, binary.data, binary.size);
+    if (n < 0)
+	return make_herror(env, hp, errno);
+    return make_result(env, hp, enif_make_int(env, n));
+}
+
+static ERL_NIF_TERM nif_read(ErlNifEnv* env, int argc,
+			     const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    handle_t* hp;
+    uint8_t* ptr;
+    unsigned char buffer[MAX_L2CAP_BUF];
+    ERL_NIF_TERM data;
+    int n;
+
+    switch(get_handle(env, argv[0], &hp, CONNECTED, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+    n = read(hp->fd, (char*)buffer, sizeof(buffer));
+    if (n < 0)
+	return make_herror(env, hp, errno);
+    ptr = enif_make_new_binary(env, n, &data);
+    memcpy(ptr, buffer, n);
+    return make_result(env, hp, data);
+}
+
+
+static ERL_NIF_TERM nif_select(ErlNifEnv* env, int argc,
+			       const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);
+    ErlNifPid pid;    
+    handle_t* hp;
+    int mask;
+
+    if (argv[1] == ATOM(read))
+	mask = ERL_NIF_SELECT_READ;
+    else if (argv[1] == ATOM(write))
+	mask = ERL_NIF_SELECT_WRITE;
+    else
+	return BADARG(env);
+    
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }
+
+    enif_self(env, &pid);
+    enif_select(env, (ErlNifEvent)(intptr_t)(hp->fd),
+		mask,
+		hp, &pid, ATOM(undefined));
+    return make_ok(env, hp);
+}
+
+
+// create all tracing NIFs
+#ifdef NIF_TRACE
+
+#undef NIF
+
+static void trace_print_arg_list(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
+{
+    enif_fprintf(stdout, "(");
+    if (argc > 0) {
+	int i;
+	if (enif_is_ref(env, argv[0])) {
+	    // FIXME print object type if available
+	    enif_fprintf(stdout, "%T", argv[0]);
+	}
+	else
+	    enif_fprintf(stdout, "%T", argv[0]);
+	for (i = 1; i < argc; i++)
+	    enif_fprintf(stdout, ",%T", argv[i]);
+    }
+    enif_fprintf(stdout, ")");
+}
+
+#define NIF(name, arity, func)					\
+static ERL_NIF_TERM trace##_##func##_##arity(ErlNifEnv* env, int argc,const ERL_NIF_TERM argv[]) \
+{ \
+    ERL_NIF_TERM result;					\
+    enif_fprintf(stdout, "ENTER %s", (name));			\
+    trace_print_arg_list(env, argc, argv);			\
+    enif_fprintf(stdout, "\r\n");				\
+    result = func(env, argc, argv);				\
+    enif_fprintf(stdout, "  RESULT=%T\r\n", (result));		\
+    enif_fprintf(stdout, "LEAVE %s\r\n", (name));		\
+    return result;						\
+}
+
+NIF_LIST
+
+#endif
+
+static int load_atoms(ErlNifEnv* env)
+{
+    LOAD_ATOM(ok);
+    LOAD_ATOM(error);
+    LOAD_ATOM(undefined);
+    LOAD_ATOM(select);
+    LOAD_ATOM(read);
+    LOAD_ATOM(write);
+    LOAD_ATOM(no_such_handle);
+    return 0;
+}
+
+
+static int load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
+{
+    UNUSED(env);
+    UNUSED(load_info);
+    ErlNifResourceFlags tried;
+    ErlNifResourceTypeInit cb;
+    DEBUGF("load%s", "");
+
+    cb.dtor = (ErlNifResourceDtor*) dtor;
+    cb.stop = (ErlNifResourceStop*) stop;
+    cb.down = (ErlNifResourceDown*) down;
+    
+    if ((l2cap_r =
+	 enif_open_resource_type_x(env, "l2cap",
+				   &cb, ERL_NIF_RT_CREATE,
+				   &tried)) == NULL) {
+	return -1;
+    }
+    if (load_atoms(env) < 0)
+	return -1;
+
+    *priv_data = 0;
+    return 0;
+}
+
+static int upgrade(ErlNifEnv* env, void** priv_data,
+		   void** old_priv_data,
+		   ERL_NIF_TERM load_info)
+{
+    UNUSED(env);
+    UNUSED(load_info);
+    ErlNifResourceFlags tried;    
+    ErlNifResourceTypeInit cb;
+    
+    DEBUGF("upgrade%s", "");
+
+    cb.dtor = (ErlNifResourceDtor*) dtor;
+    cb.stop = (ErlNifResourceStop*) stop;
+    cb.down = (ErlNifResourceDown*) down;
+
+    if ((l2cap_r = enif_open_resource_type_x(env, "l2cap", &cb,
+					     ERL_NIF_RT_CREATE|
+					     ERL_NIF_RT_TAKEOVER,
+					     &tried)) == NULL) {
+	return -1;
+    }
+    if (load_atoms(env) < 0)
+	return -1;    
+    *priv_data = *old_priv_data;
+    return 0;
+}
+
+static void unload(ErlNifEnv* env, void* priv_data)
+{
+    UNUSED(env);
+    UNUSED(priv_data);
+    DEBUGF("unload%s", "");
+}
+
+ERL_NIF_INIT(bt_l2cap, nif_funcs, load, NULL, upgrade, unload)
