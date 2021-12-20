@@ -4,7 +4,7 @@
 -module(hci_util).
 -compile(export_all).
 
--include("include/hci_drv.hrl").
+-include("../include/hci_drv.hrl").
 
 
 c_string(Data) when is_binary(Data) ->

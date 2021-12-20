@@ -46,8 +46,8 @@ main() ->
     R = try write(Hrl, Erl, Defs0, Defs0, "", "", [], [], []) of
 	    Result -> Result
 	catch
-	    error:Reason ->
-		io:format("crash: ~p\n", [erlang:get_stacktrace()]),
+	    error:Reason:Stack ->
+		io:format("crash: ~p\n", [Stack]),
 		{error,Reason}
 	end,
     file:close(Erl),
