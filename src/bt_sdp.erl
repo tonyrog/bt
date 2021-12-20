@@ -73,9 +73,12 @@ info(Address, UUIDList) ->
 info_(Address,Handle) ->
     case service_attribute(Address, Handle, 
 			   [?ATTR_ServiceDescription,
-%%			    ?ATTR_ProviderName,
-%%			    ?ATTR_ServiceID,
-%%			    ?ATTR_ServiceRecordState,
+			    %% ?ATTR_ProviderName,
+			    %%?ATTR_BrowseGroupList,
+			    %%?ATTR_ServiceID,
+			    %%?ATTR_DocumentationURL,
+			    %%  ?ATTR_ServiceRecordState,
+			    ?ATTR_SDP_VersionNumberList,
 			    ?ATTR_ProtocolDescriptorList
 			   ]) of
 	{ok, #sdpServiceAttributeResponse { attributeList = List }} ->
