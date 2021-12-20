@@ -17,8 +17,8 @@
 
 #define MAX_L2CAP_BUF 65536
 
-#define DEBUG
-#define NIF_TRACE
+//#define DEBUG
+//#define NIF_TRACE
 
 #define UNUSED(a) ((void) a)
 
@@ -442,7 +442,7 @@ static ERL_NIF_TERM nif_close(ErlNifEnv* env, int argc,
     default: break;
     }
 
-    DEBUGF("nif_close: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    DEBUGF("nif_close: hp=%p, fd=%d, state=0x%x", hp, hp->fd, hp->state);
 
     enif_mutex_lock(hp->access_mtx);
     if (hp->fd >= 0) {
@@ -479,7 +479,7 @@ static ERL_NIF_TERM nif_connect(ErlNifEnv* env, int argc,
     hp->addr.l2_psm = htobs(psm);
     hp->addr.l2_bdaddr = bdaddr;
 
-    DEBUGF("nif_connect: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    DEBUGF("nif_connect: hp=%p, fd=%d, state=0x%x", hp, hp->fd, hp->state);
 
     if (connect(hp->fd, (struct sockaddr *)&hp->addr, sizeof(hp->addr))  < 0) {
 	if (errno == EINPROGRESS)

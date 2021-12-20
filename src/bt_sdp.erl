@@ -37,6 +37,8 @@
 	 service_attribute/3,
 	 service_search_attribute/3
 	]).
+-export([protocol_port/2]).
+
 -export([encode_pdu/2,encode_pdu/3,
 	 decode_pdu/1]).
 
@@ -59,14 +61,16 @@
 -define(SDP_URL,         8).
 
 info(Address) ->
-    case service_search(Address, ["l2cap"]) of
+    info(Address, ["l2cap"]).
+info(Address, UUIDList) ->
+    case service_search(Address, UUIDList) of
 	{ok,#sdpServiceSearchResponse{serviceRecordHandleList=List}} ->
-	    [info(Address,Handle) || Handle <- List];
+	    [info_(Address,Handle) || Handle <- List];
 	Error ->
 	    Error
     end.
 
-info(Address,Handle) ->
+info_(Address,Handle) ->
     case service_attribute(Address, Handle, 
 			   [?ATTR_ServiceDescription,
 %%			    ?ATTR_ProviderName,
@@ -79,6 +83,54 @@ info(Address,Handle) ->
 	Error ->
 	    Error
     end.
+
+protocol_port(Address, Service) ->
+    case service_search(Address, [Service]) of
+	{ok,#sdpServiceSearchResponse{serviceRecordHandleList=List}} ->
+	    {ok, lists:append(
+		   [protocol_port_(Address,Service,Handle) || Handle <- List])};
+	Error ->
+	    Error
+    end.
+
+protocol_port_(Address, Service, Handle) ->
+    case service_attribute(Address, Handle, 
+			   [?ATTR_ServiceDescription,
+			    ?ATTR_ProtocolDescriptorList
+			   ]) of
+	{ok, #sdpServiceAttributeResponse { attributeList = List }} ->
+	    find_service(Service, [{attr16(A,<<A:16>>), decode_sdp_value(V)} || {A, V} <- List]);
+	Error ->
+	    Error
+    end.
+    
+
+%% find service ports among SDP records
+find_service(Service, ServiceList) ->
+    case lists:keyfind("ServiceClassIDList", 1, ServiceList) of
+	{_, {sequence, ServiceElemList}} ->
+	    case member_service_name(Service, ServiceElemList) of
+		true ->
+		    case lists:keyfind("ProtocolDescriptorList", 1, 
+				       ServiceList) of
+			{_, {sequence, ProtoList}} ->
+			    [{Proto,Port} || 
+				{sequence,[Proto,Port]} <- ProtoList];
+			false -> []
+		    end;
+		false -> []
+	    end;
+	false -> []
+    end.
+
+member_service_name(Name, [Name1 | NameList]) ->
+    case string:equal(Name, Name1, true) of
+	true -> true;
+	false -> member_service_name(Name, NameList)
+    end;
+member_service_name(_Name, []) ->
+    false.
+
 		       
 
 %% L2CAP implementation of SDP query (will be)
@@ -411,7 +463,7 @@ attribute_id_list1(_) ->
 
     
 
-cvt_uuid_list(UUIDList) ->
+cvt_uuid_list(UUIDList) when is_list(UUIDList) ->
     {sequence,
      map(
        fun(UUID) when is_binary(UUID) -> 
@@ -421,7 +473,7 @@ cvt_uuid_list(UUIDList) ->
        end,
        UUIDList)}.
 
-cvt_attribute_id_list(AttributeList) ->
+cvt_attribute_id_list(AttributeList) when is_list(AttributeList) ->
 	{sequence,
 	 map(
 	   fun({A1,A2}) ->

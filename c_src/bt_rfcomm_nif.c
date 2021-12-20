@@ -17,8 +17,8 @@
 
 #define MAX_RFCOMM_BUF 65536
 
-#define DEBUG
-#define NIF_TRACE
+//#define DEBUG
+//#define NIF_TRACE
 
 #define UNUSED(a) ((void) a)
 
@@ -785,4 +785,4 @@ static void unload(ErlNifEnv* env, void* priv_data)
     DEBUGF("unload%s", "");
 }
 
-ERL_NIF_INIT(bt_rfomm, nif_funcs, load, NULL, upgrade, unload)
+ERL_NIF_INIT(bt_rfcomm, nif_funcs, load, NULL, upgrade, unload)
