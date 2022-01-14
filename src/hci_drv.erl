@@ -182,7 +182,7 @@ get_conn_list(Hci, DevID) ->
 			   {ok,#hci_conn_info{}} | {error,posix()}.
 
 get_conn_info(Hci, Addr, Type) when is_port(Hci) ->
-    case bt:getaddr(Addr) of
+    case bt_util:getaddr(Addr) of
 	{ok,{A,B,C,D,E,F}} ->
 	    case port_call(Hci, ?CMD_HCIGETCONNINFO, <<F,E,D,C,B,A,Type>>) of
 		{ok, Info} ->
@@ -198,7 +198,7 @@ get_conn_info(Hci, Addr, Type) when is_port(Hci) ->
 			   {ok, Type::uint8_t()} | {error,posix()}.
 
 get_auth_info(Hci, Addr) when is_port(Hci) ->
-    case bt:getaddr(Addr) of
+    case bt_util:getaddr(Addr) of
 	{ok,{A,B,C,D,E,F}} ->
 	    port_call(Hci, ?CMD_HCIGETAUTHINFO, <<F,E,D,C,B,A>>);
 	Error ->
@@ -267,7 +267,7 @@ set_sco_mtu(Hci,DevID,Mtu,Mpkt) when is_port(Hci) ->
 -spec block(Hci::hci_socket_t(), Addr::bdaddr_t()) ->
 		   ok | {error,posix()}.
 block(Hci, Addr) when is_port(Hci) ->
-    case bt:getaddr(Addr) of
+    case bt_util:getaddr(Addr) of
 	{ok,{A,B,C,D,E,F}} ->
 	    port_call(Hci, ?CMD_HCIBLOCKADDR, <<F,E,D,C,B,A>>);
 	Error ->
@@ -280,7 +280,7 @@ block(Hci, Addr) when is_port(Hci) ->
 unblock(Hci, all) when is_port(Hci) ->
     unblock(Hci, {0,0,0,0,0,0});
 unblock(Hci,Addr) when is_port(Hci) ->
-    case bt:getaddr(Addr) of
+    case bt_util:getaddr(Addr) of
 	{ok, {A,B,C,D,E,F}} ->
 	    port_call(Hci, ?CMD_HCIUNBLOCKADDR, <<F,E,D,C,B,A>>);
 	Error ->

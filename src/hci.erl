@@ -7,13 +7,44 @@
 
 -module(hci).
 
--compile(export_all).
+-export([open/0, open/1]).
+-export([close/1]).
+-export([get_devices/0]).
+-export([i/0]).
+-export([scan/0, scan/1, scan/2]).
+%%
+-export([create_connection/6]).
+-export([disconnect/4]).
+-export([read_remote_name/1,read_remote_name/3]).
+-export([read_local_name/0, read_local_name/2]).
+-export([send/4, call/6, wait/5]).
+-export([dev_class/1]).
+%% -compile(export_all).
 
 -include("../include/hci_drv.hrl").
 -include("hci_api.hrl").
 
+-ifdef(debug).
+-define(dbg(F), io:format((F))).
+-define(dbg(F,A), io:format((F),(A))).
+-else.
+-define(dbg(F), ok).
+-define(dbg(F,A), ok).
+-endif.
+
+
 -define(DEFAULT_TIMEOUT, 5000).
 -define(INQUIRY_TIMEOUT, 10000).
+
+-define(map_from_record(Name, Record),
+	map_from_record_(record_info(fields, Name),
+			 record_info(size, Name)-1,
+			 Record)).
+
+map_from_record_(Fields, Size, Record) when is_list(Fields), is_tuple(Record) ->
+    maps:from_list([{F,element(I+1,Record)} ||
+		       {F,I} <- lists:zip(Fields, lists:seq(1, Size))]).
+
 
 get_devices() ->
     Hci = hci_drv:open(),
@@ -30,38 +61,61 @@ get_devices_(Hci) ->
 get_devices_(Hci, [{DevID,_}|Ds]) ->
     case hci_drv:get_dev_info(Hci, DevID) of
 	{ok,Info} ->
-	    [{Info#hci_dev_info.name,
-	      Info#hci_dev_info.bdaddr}|get_devices_(Hci, Ds)];
+	    [?map_from_record(hci_dev_info,Info) |
+	     get_devices_(Hci, Ds)];
 	_Error ->
 	    get_devices_(Hci, Ds)
     end;
 get_devices_(_Hci, []) ->
     [].
 
+find_device_(Hci, Name) ->
+    {ok,Ds} = hci_drv:get_dev_list(Hci),
+    find_device_(Hci, Name, Ds).
+
+find_device_(Hci, Name, [{DevID,_}|Ds]) ->
+    case hci_drv:get_dev_info(Hci, DevID) of
+	{ok,Info} ->
+	    if Info#hci_dev_info.name =:= Name; Name =:= default ->
+		    ?map_from_record(hci_dev_info,Info);
+	       true ->
+		    find_device_(Hci, Name, Ds)
+	    end;
+	_Error ->
+	    find_device_(Hci, Name, Ds)
+    end;
+find_device_(_Hci, _Name, []) ->
+    false.
+
 	    
-open(DevID) ->
+open(DevID) when is_integer(DevID) ->
+    open1_(hci_drv:open(), DevID);
+open(Name) when is_list(Name); Name =:= default ->
     Hci = hci_drv:open(),
-    case hci_drv:bind(Hci, DevID) of
-	ok -> 
-	    hci_drv:activate(Hci),
-	    {ok,Hci};
-	Error -> Error
+    case find_device_(Hci, Name) of
+	false ->
+	    hci_drv:close(),
+	    {error, enoent};
+	DevInfo ->
+	    open1_(Hci, maps:get(dev_id, DevInfo))
     end.
 
 open() ->
     Hci = hci_drv:open(),
     case hci_drv:get_dev_list(Hci) of
 	{ok,[]} -> {error, enoent};
-	{ok,[{DevID,_}|_]} ->
-	    case hci_drv:bind(Hci, DevID) of
-		ok ->
-		    hci_drv:activate(Hci),
-		    {ok,Hci};
-		Error -> Error
-	    end;
-	Error ->
-	    Error
+	{ok,[{DevID,_}|_]} -> open1_(Hci, DevID);
+	{error,_}=Error -> Error
     end.
+
+open1_(Hci, DevID) ->
+    case hci_drv:bind(Hci, DevID) of
+	ok ->
+	    hci_drv:activate(Hci),
+	    {ok,Hci};
+	Error -> Error
+    end.
+
 
 close(Hci) ->
     hci_drv:close(Hci).
@@ -85,37 +139,127 @@ i() ->
 	    Error
     end.
 
-scan() ->    
-    scan(?INQUIRY_TIMEOUT).
+-type inquiry_info_t() :: 
+	#{
+	  name => string(),  %% optional lookup names
+	  bdaddr => bdaddr_t(),
+	  pscan_rep_mode => uint8_t(),
+	  pscan_period_mode => uint8_t(),
+	  pscan_mode => uint8_t(),
+	  dev_class => <<_:3>>,
+	  clock_offset => uint16_t()
+	 }.
 
-scan(Timeout) ->
-    {ok,Hci} = open(),
-    case hci_drv:inquiry(Hci, Timeout, 10, 0, 0) of
-	{ok,Is} ->
-	    lists:foreach(
-	      fun(I) ->
-		      io:format("~s: dev_class=~w, clock_offset=~w\n",
-				[bt:format_address(I#inquiry_info.bdaddr),
-				 I#inquiry_info.dev_class,
-				 I#inquiry_info.clock_offset]),
-		      io:format("     pscan_rep_mode:~w\n"
-				"     pscan_period_mode:~w\n"
-				"     pscan_mode:~w\n",
-				[ I#inquiry_info.pscan_rep_mode,
-				  I#inquiry_info.pscan_period_mode,
-				  I#inquiry_info.pscan_mode]),
-		      case read_remote_name(Hci, I, ?DEFAULT_TIMEOUT) of
-			  {ok,Name} ->
-			      io:format("    Name: ~s\n", [Name]);
-			  _Error ->
-			      ok
-		      end
-	      end, Is);
+
+-spec scan() -> [inquiry_info_t()].
+
+
+scan() ->    
+    scan(default, ?INQUIRY_TIMEOUT).
+
+-spec scan(Timeout::integer()) -> [inquiry_info_t()].
+
+scan(Timeout) when is_integer(Timeout) ->
+    scan(default, Timeout);
+scan(Name) when is_list(Name) ->
+    scan(Name, ?INQUIRY_TIMEOUT).
+
+scan(Name, Timeout) ->
+    case open(Name) of
+	{ok,Hci} ->
+	    case hci_drv:inquiry(Hci, Timeout, 10, 0, 0) of
+		{ok,Is} ->
+		    lists:foldl(
+		      fun(I,Acc) ->
+			      Info = ?map_from_record(inquiry_info, I),
+			      Addr = maps:get(bdaddr, Info),
+			      AddrStr = bt:format_address(Addr),
+			      io:format("~s: ~p\n", [AddrStr, Info]),
+			      case read_remote_name(Hci, Info, ?DEFAULT_TIMEOUT) of
+				  {ok,Name} ->
+				      io:format("~s : ~s\n", [Name, AddrStr]),
+				      [Info#{ name => Name } | Acc];
+				  _Error ->
+				      io:format("warning: unable to read name for device ~s\n", [AddrStr]),
+				      [Info|Acc]
+			      end
+		      end, [], Is);
+		Error -> Error
+	    end;
 	Error ->
 	    Error
     end.
 
-    
+
+majors() -> 
+    {misc, computer, phone, net_access, audio_video,
+     peripheral, imaging, wearable, toy}.
+	   
+%% minor computer type
+computers() ->
+    {misc, desktop, server, laptop, handheld, palm, wearable}.
+
+%% minor phone type
+phones() ->
+    {misc, cell, cordless, smart, wired, isdn, sim_card_reader_for}.
+
+audio_video() ->
+    {misc, headset, handsfree, reserved, microphone, loudspeaker,
+     headphones, portable_audio, car_audio, set_top_box,
+     hifi_audio, video_tape_recorder, video_camera,
+     camcorder, video_display_and_loudspeaker, video_conferencing, 
+     reserved, game_toy}.
+
+peripherals() -> 
+    {misc, joystick, gamepad, remote_control, sensing_device,
+     digitiser_tablet, card_reader}.
+
+wearables() ->
+    {misc, wrist_watch, pager, jacket, helmet, glasses}.
+
+toys() ->
+    {misc, robot, vehicle, character, controller, game}.
+
+%%
+flag(Flags, Bit, Value) when Flags band Bit =:= Bit ->
+    Value;
+flag(_, _, _) ->
+    [].
+
+elem(I, Tag, Tuple) when I > tuple_size(Tuple) -> {Tag,I};
+elem(I, _Tag, Tuple) -> element(I+1, Tuple).
+
+dev_class(_DevClass = <<A0,A1,A2>>) ->
+    <<Flags:11,Major:5,Minor:6,_:2>> = <<A2,A1,A0>>,
+    %%io:format("flags=0x~3.16.0B, major=~w, minor=~w\n",[Flags,Major,Minor]),
+    {flag(Flags,16#01,[position]) ++
+     flag(Flags,16#02,[net]) ++
+     flag(Flags,16#04,[render]) ++
+     flag(Flags,16#08,[capture]) ++
+     flag(Flags,16#10,[obex]) ++
+     flag(Flags,16#20,[audio]) ++
+     flag(Flags,16#40,[phone]) ++
+     flag(Flags,16#80,[info]),
+     case Major of
+	 1 -> elem(Minor, computer, computers());
+	 2 -> elem(Minor, phones, phones());
+	 3 -> {usage,{Minor,56}};
+	 4 -> elem(Minor, audio_video, audio_video());
+	 5 -> elem(Minor band 16#0f, peripheral, peripherals()) ++
+		  flag(Minor,16#10,[with_keyboard]) ++
+		  flag(Minor,16#20,[with_pointing_device]);
+	 6 ->
+	     flag(Minor, 16#02, [with_display]) ++
+		 flag(Minor, 16#04, [with_camera]) ++
+		 flag(Minor, 16#08, [with_scanner]) ++
+		 flag(Minor, 16#10, [with_printer]);
+	 7 -> elem(Minor, wearable, wearables());
+	 8 -> elem(Minor, toy, toys());
+	_ -> []
+     end,
+     elem(Major, major, majors())}.
+
+
 create_connection(Hci, Bdaddr, Pkt_type, Clock_offset, Role_switch, Timeout) ->
     Pscan_rep_mode = 16#02,
     Pscan_mode = 0,
@@ -147,25 +291,25 @@ read_remote_name(Bdaddr) ->
     with_socket(fun(Hci) -> read_remote_name(Hci,Bdaddr,?DEFAULT_TIMEOUT) end).
 			
 
-read_remote_name(Hci,
-		 #inquiry_info {
-		    bdaddr=Bdaddr,
-		    pscan_rep_mode=Pscan_rep_mode,
-		    pscan_mode=Pscan_mode,
-		    clock_offset=Clock_offset }, Timeout) ->
-    read_remote_name(Hci,Bdaddr,Pscan_rep_mode,Pscan_mode,
-		     Clock_offset bor 16#8000,Timeout);
+read_remote_name(Hci, InquiryInfo, Timeout) when is_map(InquiryInfo) ->
+    read_remote_name_(Hci, InquiryInfo, Timeout);
 read_remote_name(Hci, Bdaddr, Timeout) when is_binary(Bdaddr) ->
-    read_remote_name(Hci,Bdaddr,16#02,16#00,16#0000,Timeout);
+    read_remote_name_(Hci,#{ bdaddr => Bdaddr },Timeout);
 read_remote_name(Hci, Bdaddr, Timeout) when is_list(Bdaddr) ->
     case bt:getaddr(Bdaddr) of
 	{ok,{A,B,C,D,E,F}} ->
-	    read_remote_name(Hci, <<F,E,D,C,B,A>>, Timeout);
+	    read_remote_name_(Hci, #{ bdaddr => <<F,E,D,C,B,A>> }, Timeout);
 	Error ->
 	    Error
     end.
     
-read_remote_name(Hci,Bdaddr,Pscan_rep_mode,Pscan_mode,Clock_offset,Timeout) ->
+read_remote_name_(Hci, InquiryInfo = #{ bdaddr := Bdaddr }, Timeout) ->
+    Pscan_rep_mode = maps:get(pscan_rep_mode, InquiryInfo, 16#02),
+    Pscan_mode     = maps:get(pscan_mode, InquiryInfo, 16#00),
+    Clock_offset    = case maps:get(clock_offset,InquiryInfo,undefined) of
+			  undefined -> 16#0000;
+			  Offset -> Offset bor 16#8000
+		      end,
     case call(Hci,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ,
 	      <<?remote_name_req_cp_bin(Bdaddr,Pscan_rep_mode,Pscan_mode,
 					Clock_offset)>>,
@@ -197,7 +341,7 @@ send(Hci,Opcode,Data) ->
     Pkt = <<?HCI_COMMAND_PKT,Opcode:16/little,
 	    (byte_size(Data)):8,Data/binary>>,
     R = hci_drv:send(Hci,Pkt),
-    io:format("send ~p = ~p\n", [Pkt,R]),
+    ?dbg("send ~p = ~p\n", [Pkt,R]),
     R.
 
 send(Hci, OGF, OCF, Data) ->
@@ -206,14 +350,14 @@ send(Hci, OGF, OCF, Data) ->
 call(Hci,OGF,OCF,Data,Event,Timeout) ->
     Opcode = ?cmd_opcode_pack(OGF,OCF),
     {ok,OldFilter} = hci_drv:get_filter(Hci),
-    %% io:format("call: saved_filter = ~p\n", [OldFilter]),
+    %% ?dbg("call: saved_filter = ~p\n", [OldFilter]),
     NewFilter = hci_drv:make_filter(Opcode,
 				    [?HCI_EVENT_PKT],
 				    [?EVT_CMD_STATUS,
 				     ?EVT_CMD_COMPLETE,
 				     ?EVT_LE_META_EVENT,
 				     Event]),
-    %% io:format("call: new_filter = ~p\n", [NewFilter]),
+    %% ?dbg("call: new_filter = ~p\n", [NewFilter]),
     case hci_drv:set_filter(Hci, NewFilter) of
 	ok ->
 	    true = send(Hci,Opcode,Data),
@@ -241,11 +385,11 @@ wait_(_Hci,_Opcode,_Event,0,TRef) ->
 
 wait_(Hci,Opcode,Event,Try,TRef) ->
     receive
-	{Hci,Data0={data,<<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>}} ->
-	    io:format("Got data ~p\n", [Data0]),
+	{Hci,_Data0={data,<<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>}} ->
+	    ?dbg("Got data ~p\n", [_Data0]),
 	    case Evt of
 		?EVT_CMD_STATUS ->
-		    io:format("got cmd_status\n", []),
+		    ?dbg("got cmd_status\n", []),
 		    case Packet of
 			<<?evt_cmd_status_bin(0,_Ncmd,Opcode),R/binary>> ->
 			    if Evt =/= Event ->
@@ -259,7 +403,7 @@ wait_(Hci,Opcode,Event,Try,TRef) ->
 			    wait_(Hci,Opcode,Event,Try-1,TRef)
 		    end;
 		?EVT_CMD_COMPLETE ->
-		    io:format("got cmd_complete\n", []),
+		    ?dbg("got cmd_complete\n", []),
 		    case Packet of
 			<<?evt_cmd_complete_bin(_Ncmd,Opcode),R/binary>> ->
 			    {ok,R};
@@ -268,14 +412,14 @@ wait_(Hci,Opcode,Event,Try,TRef) ->
 		    end;
 
 		?EVT_REMOTE_NAME_REQ_COMPLETE when Evt =:= Event ->
-		    io:format("got remote_name_req_complete\n", []),
+		    ?dbg("got remote_name_req_complete\n", []),
 		    case Packet of
 			<<?evt_remote_name_req_complete_bin(_Status,_Bdaddr,_Name)>> ->
 			    %% fixme: check Bdaddr!
 			    {ok,Packet}
 		    end;
 		?EVT_LE_META_EVENT ->
-		    io:format("got evt_le_meta_event\n", []),
+		    ?dbg("got evt_le_meta_event\n", []),
 		    case Packet of
 			<<?evt_le_meta_event_bin(SEvt,_D1),LePacket/binary>> ->
 			    if SEvt =:= Event ->
@@ -285,16 +429,13 @@ wait_(Hci,Opcode,Event,Try,TRef) ->
 			    end
 		    end;
 		_ ->
-		    io:format("got event ~p\n", [Evt]),
+		    ?dbg("got event ~p\n", [Evt]),
 		    {ok,Packet}
 	    end;
 
 	{timeout,TRef,_} ->
 	    timeout
     end.
-
-rev_bin(Bin) ->
-    list_to_binary(lists:reverse(binary_to_list(Bin))).
 
 start_timer(0) -> undefined;
 start_timer(Timeout) -> erlang:start_timer(Timeout, self(), timeout).
@@ -328,3 +469,6 @@ print_item({Module,Function,ArityArgs,Location}) ->
 	   is_integer(ArityArgs) -> {ArityArgs, []}
 	end,
     io:format("  ~s:~w: ~s:~s/~w ~p\n", [File,Line,Module,Function,Arity,Args]).
+
+
+    

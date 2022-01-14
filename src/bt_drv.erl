@@ -1236,7 +1236,7 @@ encode_linfo([What | Info]) ->
 encode_linfo([]) -> [].
 
 
-decode_class(Class) ->    
+decode_class(Class) ->
     <<Service:11, Major:5, Minor:6,_:2>> = <<Class:24>>,
     {Service,Major,Minor}.
 

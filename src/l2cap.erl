@@ -26,7 +26,7 @@
 
 %% combined open/bind(any)/connect
 open(Address, Psm) ->
-    [{_Name,Addr}|_] = hci:get_devices(),
+    [#{ bdaddr := Addr}|_] = hci:get_devices(),
     open(Addr, 0, Address, Psm).
 open(AdapterAddress, LocalPsm, Address, Psm) ->
     case bt_l2cap:open_() of

@@ -1,5 +1,8 @@
 Bluetooth API for Erlang
 ========================
 
-Currently mac os x only.
+# Linux only.
 
+# Require
+
+	sudo apt install libbluetooth-dev

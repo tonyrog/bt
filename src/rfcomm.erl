@@ -25,7 +25,7 @@
 	 listen/1, listen/2, accept/1, accept/2]).
 
 open(Address, Channel) ->
-    [{_Name,Addr}|_] = hci:get_devices(),
+    [#{ bdaddr := Addr}|_] = hci:get_devices(),
     open(Addr, 0, Address, Channel).
 
 open(AdapterAddress, LocalChannel, Address, Channel) ->

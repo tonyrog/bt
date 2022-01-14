@@ -789,7 +789,7 @@ static ErlDrvSSizeT hci_drv_ctl(ErlDrvData d,unsigned int cmd,char* buf0,
 	goto badarg;
       dr.dev_id = get_int32(buf);
       dr.dev_opt = buf[4] ? ENCRYPT_P2P : ENCRYPT_DISABLED;
-      if (ioctl(INT_EVENT(ctx->fd), HCISETAUTH, (void*) &dr) < 0)
+      if (ioctl(INT_EVENT(ctx->fd), HCISETENCRYPT, (void*) &dr) < 0)
 	goto error;
       goto ok;
     }
