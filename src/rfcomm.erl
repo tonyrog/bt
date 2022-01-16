@@ -21,14 +21,14 @@
 
 -module(rfcomm).
 
--export([open/2, open/4, close/1, send/2, recv/1, 
+-export([connect/2, connect/4, close/1, send/2, recv/1, 
 	 listen/1, listen/2, accept/1, accept/2]).
 
-open(Address, Channel) ->
+connect(Address, Channel) ->
     [#{ bdaddr := Addr}|_] = hci:get_devices(),
-    open(Addr, 0, Address, Channel).
+    connect(Addr, 0, Address, Channel).
 
-open(AdapterAddress, LocalChannel, Address, Channel) ->
+connect(AdapterAddress, LocalChannel, Address, Channel) ->
     case bt_rfcomm:open_() of
 	{ok,RFCOMM} -> 
 	    case bt_rfcomm:bind_(RFCOMM, AdapterAddress, LocalChannel) of
@@ -46,7 +46,6 @@ async_connect(RFCOMM, Address, Channel) ->
 	{error, einprogress} ->
 	    case bt_rfcomm:select_(RFCOMM, write) of
 		ok ->
-		    %% FIXME: timeout
 		    receive
 			{select,RFCOMM,undefined,_Ready} ->
 			    case bt_rfcomm:getpeername(RFCOMM) of
@@ -64,10 +63,8 @@ async_connect(RFCOMM, Address, Channel) ->
 	Error -> Error
     end.
 
-
 close(RFComm) ->
     bt_rfcomm:close(RFComm).
-
 
 send(RFCOMM, Data) ->
     async_write(RFCOMM, iolist_to_binary(Data)).
@@ -145,13 +142,16 @@ async_accept(RFCOMM, Timeout) ->
 				       end,
 			    async_accept(RFCOMM, Timeout1) %% FIXME
 		    after
+			%% fixme: flush! if not {ok, cancelled}
 			Timeout ->
+			    bt_rfomm:select_(RFCOMM, [cancel,read]),
 			    {error, timeout}
 		    end;
 		Error ->
 		    Error
 	    end;
-	{ok, CRFCOMM} ->
+	{ok, {CRFCOMM, _AddrChan}} ->
+	    io:format("accepted connection from ~p\n", [_AddrChan]),
 	    {ok, CRFCOMM};
 	Error ->
 	    Error
@@ -177,7 +177,9 @@ async_recv(RFCOMM, Timeout) ->
 				       end,
 			    async_recv(RFCOMM, Timeout1) %% FIXME
 		    after
+			%% fixme: flush! if not {ok, cancelled}
 			Timeout ->
+			    bt_rfomm:select_(RFCOMM, [cancel,read]),
 			    {error, timeout}
 		    end;
 		Error ->

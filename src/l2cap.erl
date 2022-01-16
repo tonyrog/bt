@@ -21,14 +21,14 @@
 
 -module(l2cap).
 
--export([open/2, open/4, close/1, send/2, recv/1, 
+-export([connect/2, connect/4, close/1, send/2, recv/1, 
 	 listen/1, listen/2, accept/1, accept/2]).
 
 %% combined open/bind(any)/connect
-open(Address, Psm) ->
+connect(Address, Psm) ->
     [#{ bdaddr := Addr}|_] = hci:get_devices(),
-    open(Addr, 0, Address, Psm).
-open(AdapterAddress, LocalPsm, Address, Psm) ->
+    connect(Addr, 0, Address, Psm).
+connect(AdapterAddress, LocalPsm, Address, Psm) ->
     case bt_l2cap:open_() of
 	{ok,L2CAP} -> 
 	    case bt_l2cap:bind_(L2CAP, AdapterAddress, LocalPsm) of
@@ -70,6 +70,7 @@ close(L2CAP) ->
 send(L2CAP, Data) ->
     async_write(L2CAP, iolist_to_binary(Data)).
 
+%% FIXME: timeout
 async_write(_L2CAP, <<>>) ->
     ok;
 async_write(L2CAP, Data) ->
@@ -84,7 +85,6 @@ async_write(L2CAP, Data) ->
 	{error, eagain} ->
 	    case bt_l2cap:select_(L2CAP, write) of
 		ok ->
-		    %% FIXME: timeout
 		    receive
 			{select,L2CAP,undefined,_Ready} ->
 			    io:format("write continue\n", []),
@@ -144,13 +144,15 @@ async_accept(L2CAP, Timeout) ->
 			    async_accept(L2CAP, Timeout1) %% FIXME
 		    after
 			Timeout ->
+			    %% fixme: flush! if not {ok, cancelled}
 			    bt_l2cap:select_(L2CAP, [cancel,read]),
 			    {error, timeout}
 		    end;
 		Error ->
 		    Error
 	    end;
-	{ok, CL2CAP} ->
+	{ok, {CL2CAP, _AddrPsm}} ->
+	    io:format("accepted connection from ~p\n", [_AddrPsm]),
 	    {ok, CL2CAP};
 	Error ->
 	    Error
@@ -177,6 +179,8 @@ async_recv(L2CAP, Timeout) ->
 			    async_recv(L2CAP, Timeout1) %% FIXME
 		    after
 			Timeout ->
+			    %% fixme: flush! if not {ok, cancelled}
+			    bt_l2cap:select_(L2CAP, [cancel,read]),
 			    {error, timeout}
 		    end;
 		Error ->

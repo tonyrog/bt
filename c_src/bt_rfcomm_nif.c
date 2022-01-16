@@ -409,7 +409,7 @@ static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
     memset(hp1, 0, sizeof(handle_t));
     hp1->access_mtx = enif_mutex_create("rfcomm_access");
     hp1->fd = fd;
-    hp1->state |= CONNECTED;
+    hp1->state |= (OPEN|BOUND|CONNECTED);
     hp1->addr = hp->addr;
     ht = enif_make_resource(env, hp1);
     enif_release_resource(hp1);
