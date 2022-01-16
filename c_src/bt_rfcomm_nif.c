@@ -86,10 +86,12 @@ typedef enum {
     UNDEFINED   = 0x00,
     OPEN        = 0x01,
     CLOSING     = 0x02,
-    LISTEN      = 0x04,
-    BOUND       = 0x08,
-    CONNECTED   = 0x10,
-    CONNECTING  = 0x20,
+    MONITOR     = 0x04,
+
+    BOUND       = 0x10,    
+    LISTEN      = 0x20,
+    CONNECTED   = 0x40,
+    CONNECTING  = 0x80,
 } hstate_t;
 
 typedef struct _handle_t {
@@ -98,14 +100,13 @@ typedef struct _handle_t {
     struct sockaddr_rc addr;      // peer address/connect/accept
     hstate_t      state;
     int           fd;
+    ErlDrvMonitor mon;           // monitor when selecting
 } handle_t;
 
 DECL_ATOM(ok);
 DECL_ATOM(error);
 DECL_ATOM(undefined);
 DECL_ATOM(select);
-DECL_ATOM(read);
-DECL_ATOM(write);
 DECL_ATOM(no_such_handle);
 
 // Declare all nif functions
@@ -542,26 +543,29 @@ static ERL_NIF_TERM nif_select(ErlNifEnv* env, int argc,
     UNUSED(argc);
     ErlNifPid pid;    
     handle_t* hp;
-    int mask;
+    int mask, res;
 
-    if (argv[1] == ATOM(read))
-	mask = ERL_NIF_SELECT_READ;
-    else if (argv[1] == ATOM(write))
-	mask = ERL_NIF_SELECT_WRITE;
-    else
-	return BADARG(env);
+    if (!get_select_mask(env, argv[1], &mask))
+	return BADARG(env);	    
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-
     enif_self(env, &pid);
-    enif_select(env, (ErlNifEvent)(intptr_t)(hp->fd),
-		mask,
-		hp, &pid, ATOM(undefined));
-    return make_ok(env, hp);
+    if (mask & ERL_NIF_SELECT_CANCEL) {
+	if (hp->state & MONITOR)
+	    enif_demonitor_process(env, hp, &hp->mon);
+	hp->state &= ~MONITOR;
+    }
+    else {
+	if (!enif_monitor_process(env, hp, &pid, &hp->mon))
+	    hp->state |= MONITOR;
+    }
+    res = enif_select(env, (ErlNifEvent)hp->fd,mask,hp,&pid,ATOM(undefined));
+    done_handle(env, hp);
+    return make_select_result(env, mask, res);    
 }
 
 
@@ -606,12 +610,12 @@ NIF_LIST
 
 static int load_atoms(ErlNifEnv* env)
 {
+    bt_lib_load_atoms(env);
+    
     LOAD_ATOM(ok);
     LOAD_ATOM(error);
     LOAD_ATOM(undefined);
     LOAD_ATOM(select);
-    LOAD_ATOM(read);
-    LOAD_ATOM(write);
     LOAD_ATOM(no_such_handle);
     return 0;
 }

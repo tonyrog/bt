@@ -106,7 +106,7 @@ read_(_Handle) ->
     ?nif_stub.
 
 
--spec select_(Handle::handle(), Mode::read|write) ->
+-spec select_(Handle::handle(), Mode::read|write|[read|write|cancel]) ->
 	  ok | {error, reason()}.
 
 select_(_Handle, _Mode) ->

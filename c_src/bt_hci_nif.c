@@ -19,8 +19,8 @@
 #include "erl_driver.h"
 #include "bt_lib.h"
 
-//#define DEBUG
-//#define NIF_TRACE
+#define DEBUG
+#define NIF_TRACE
 
 #define UNUSED(a) ((void) a)
 
@@ -121,9 +121,11 @@ typedef enum {
     UNDEFINED   = 0x00,
     OPEN        = 0x01,
     CLOSING     = 0x02,
-    LISTEN      = 0x04,
-    BOUND       = 0x08,
-    SCANNING    = 0x10
+    MONITOR     = 0x04,
+    
+    BOUND       = 0x10,    
+    LISTEN      = 0x20,
+    SCANNING    = 0x40,
 } hstate_t;
 
 
@@ -132,9 +134,10 @@ typedef struct _handle_t {
     int           access_count;
     hstate_t      state;
     int           fd;
-    int           dev_id;
-    char*         buf;
+    int           dev_id;    // bound dev_id
     size_t        buf_len;
+    char*         buf;
+    ErlDrvMonitor mon;       // monitor when selecting
 } handle_t;
 
 DECL_ATOM(ok);
@@ -143,6 +146,7 @@ DECL_ATOM(undefined);
 DECL_ATOM(select);
 DECL_ATOM(read);
 DECL_ATOM(write);
+DECL_ATOM(cancel);
 DECL_ATOM(no_such_handle);
 
 DECL_ATOM(enabled);
@@ -223,6 +227,10 @@ static void down(ErlNifEnv* env, handle_t* hp,
     UNUSED(mon);
     UNUSED(hp);
     DEBUGF("down: hp=%p, fd=%d", hp, (intptr_t)hp->fd);
+    if (hp->state & MONITOR) {
+	hp->state &= ~MONITOR;
+	// cancel select?
+    }
 }
 
 static int get_handle(ErlNifEnv* env, ERL_NIF_TERM arg,handle_t** handle_ptr,
@@ -295,7 +303,6 @@ static ERL_NIF_TERM make_herror(ErlNifEnv* env, handle_t* handle, int err)
 // Value must be return from NIF
 static ERL_NIF_TERM make_hbadarg(ErlNifEnv* env, handle_t* handle)
 {
-    DEBUGF("make_herror: %d", err);
     done_handle(env, handle);
     return enif_make_badarg(env);
 }
@@ -335,7 +342,6 @@ static ERL_NIF_TERM make_hci_filter(ErlNifEnv* env, struct hci_filter* fp)
 static int get_hci_filter(ErlNifEnv* env, ERL_NIF_TERM arg,
 			  struct hci_filter* fp)
 {
-
     uint64_t event_mask;
     uint32_t value;
     const ERL_NIF_TERM* fields;
@@ -350,8 +356,8 @@ static int get_hci_filter(ErlNifEnv* env, ERL_NIF_TERM arg,
     fp->type_mask = value;
     if (!enif_get_uint64(env, fields[2], &event_mask))
 	return 0;
-    fp->event_mask[0] = event_mask >> 32;
-    fp->event_mask[1] = event_mask;
+    fp->event_mask[0] = event_mask;    
+    fp->event_mask[1] = (event_mask >> 32);
     if (!enif_get_uint(env, fields[3], &value))
 	return 0;
     fp->opcode = value;
@@ -500,7 +506,7 @@ static ERL_NIF_TERM nif_close(ErlNifEnv* env, int argc,
     enif_mutex_lock(hp->access_mtx);
     if (hp->fd >= 0) {
 	hp->state |= CLOSING;
-	enif_select(env, (ErlNifEvent)((intptr_t)(hp->fd)),
+	enif_select(env, (ErlNifEvent)hp->fd,
 		    ERL_NIF_SELECT_STOP,
 		    hp, NULL, ATOM(undefined));
     }
@@ -1200,26 +1206,28 @@ static ERL_NIF_TERM nif_select(ErlNifEnv* env, int argc,
     UNUSED(argc);
     ErlNifPid pid;    
     handle_t* hp;
-    int mask;
+    int mask, res;
 
-    if (argv[1] == ATOM(read))
-	mask = ERL_NIF_SELECT_READ;
-    else if (argv[1] == ATOM(write))
-	mask = ERL_NIF_SELECT_WRITE;
-    else
+    if (!get_select_mask(env, argv[1], &mask))
 	return BADARG(env);
-    
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-
     enif_self(env, &pid);
-    enif_select(env, (ErlNifEvent)(intptr_t)(hp->fd),
-		mask,
-		hp, &pid, ATOM(undefined));
-    return make_ok(env, hp);
+    if (mask & ERL_NIF_SELECT_CANCEL) {
+	if (hp->state & MONITOR)
+	    enif_demonitor_process(env, hp, &hp->mon);
+	hp->state &= ~MONITOR;
+    }
+    else {
+	if (!enif_monitor_process(env, hp, &pid, &hp->mon))
+	    hp->state |= MONITOR;
+    }
+    res = enif_select(env, (ErlNifEvent)hp->fd,mask,hp,&pid,ATOM(undefined));
+    done_handle(env, hp);
+    return make_select_result(env, mask, res);
 }
 
 
@@ -1264,12 +1272,12 @@ NIF_LIST
 
 static int load_atoms(ErlNifEnv* env)
 {
+    bt_lib_load_atoms(env);
+    
     LOAD_ATOM(ok);
     LOAD_ATOM(error);
     LOAD_ATOM(undefined);
     LOAD_ATOM(select);
-    LOAD_ATOM(read);
-    LOAD_ATOM(write);
     LOAD_ATOM(no_such_handle);
 
     LOAD_ATOM(enabled);

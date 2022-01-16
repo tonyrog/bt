@@ -391,7 +391,15 @@ wait_(Hci,Opcode,Event,Try,TRef) ->
 	{select,Hci,undefined,_Ready} ->
 	    response_(Hci,Opcode,Event,Try,TRef);
 	{timeout,TRef,_} ->
-	    timeout;
+	    case bt_hci:select(Hci, [cancel,read]) of
+		{ok,cancelled}  -> timeout;
+		_ -> 
+		    %% flush the message
+		    receive 
+			{select,Hci,undefined,_Ready} -> ok
+		    after 0 -> ok
+		    end
+	    end;
 	Other ->
 	    io:format("hci:wait/5 got ~p\n", [Other]),
 	    error

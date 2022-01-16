@@ -190,8 +190,8 @@ write(_Hci, _Data) -> ?nif_stub().
 -spec read(Hci::handle()) -> binary().
 read(_Hci) -> ?nif_stub().
     
--spec select(Handle::handle(), Mode::read|write) ->
-	  ok | {error, reason()}.
+-spec select(Handle::handle(), Mode::read|write|[read|write|cancel]) ->
+	  ok | {ok, cancelled} | {error, reason()}.
 
 select(_Handle, _Mode) ->
     ?nif_stub().

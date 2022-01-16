@@ -106,7 +106,7 @@ listen(AdapterAddr, Psm) ->
 	{ok,L2CAP} -> 
 	    case bt_l2cap:bind_(L2CAP, AdapterAddr, Psm) of
 		ok ->
-		    case bt_l2cap:listen(L2CAP) of
+		    case bt_l2cap:listen_(L2CAP) of
 			ok -> {ok,L2CAP};
 			Error -> 
 			    bt_l2cap:close(L2CAP),

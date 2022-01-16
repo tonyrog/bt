@@ -6,6 +6,40 @@
 #include <bluetooth/bluetooth.h>
 #include "erl_nif.h"
 
+#define DECL_ATOM(name) \
+    static ERL_NIF_TERM atm_##name = 0
+
+#define LOAD_ATOM(name)			\
+    atm_##name = enif_make_atom(env,#name)
+
+#define ATOM(name) atm_##name
+
+DECL_ATOM(ok);
+DECL_ATOM(error);
+DECL_ATOM(read);
+DECL_ATOM(write);
+DECL_ATOM(cancel);
+DECL_ATOM(stop);
+DECL_ATOM(undefined);
+DECL_ATOM(invalid);
+DECL_ATOM(failed);
+DECL_ATOM(cancelled);
+
+int bt_lib_load_atoms(ErlNifEnv* env)
+{
+    LOAD_ATOM(ok);
+    LOAD_ATOM(error);    
+    LOAD_ATOM(read);
+    LOAD_ATOM(write);
+    LOAD_ATOM(cancel);
+    LOAD_ATOM(stop);
+    LOAD_ATOM(undefined);
+    LOAD_ATOM(invalid);
+    LOAD_ATOM(failed);
+    LOAD_ATOM(cancelled);    
+    return 0;
+}
+
 void bdaddr_swap(bdaddr_t* dst, const bdaddr_t* src)
 {
     int i;
@@ -166,4 +200,74 @@ ERL_NIF_TERM make_bdaddr(ErlNifEnv* env, bdaddr_t* addr)
 			    enif_make_int(env, laddr.b[3]),
 			    enif_make_int(env, laddr.b[4]),
 			    enif_make_int(env, laddr.b[5]));
+}
+
+int get_select_mask(ErlNifEnv* env, ERL_NIF_TERM arg, int* maskp)
+{
+    int mask = 0;
+
+    if (enif_is_list(env, arg)) {
+	ERL_NIF_TERM list = arg;
+	ERL_NIF_TERM head, tail;
+	while(enif_get_list_cell(env, list, &head, &tail)) {
+	    if (head == ATOM(read))
+		mask |= ERL_NIF_SELECT_READ;
+	    else if (head == ATOM(write))
+		mask = ERL_NIF_SELECT_WRITE;
+	    else if (head == ATOM(cancel))
+		mask = ERL_NIF_SELECT_CANCEL;
+	    else
+		return 0;
+	    list = tail;
+	}
+	if ((mask == 0) || !enif_is_empty_list(env, list))
+	    return 0;
+    }
+    else if (arg == ATOM(read))
+	mask = ERL_NIF_SELECT_READ;
+    else if (arg == ATOM(write))
+	mask = ERL_NIF_SELECT_WRITE;
+    else
+	return 0;
+    *maskp = mask;
+    return 1;
+}
+
+ERL_NIF_TERM make_select_result(ErlNifEnv* env, int mask, int res)
+{
+    if (res < 0) {
+	if (res & ERL_NIF_SELECT_INVALID_EVENT)
+	    return enif_make_tuple2(env, ATOM(error), ATOM(invalid));
+	if (res & ERL_NIF_SELECT_FAILED)
+	    return enif_make_tuple2(env, ATOM(error), ATOM(failed));
+	return enif_make_tuple2(env, ATOM(error), ATOM(undefined));       
+    }
+    else if (res > 0) {
+	if (res & ERL_NIF_SELECT_STOP_CALLED)  // shold not happen (from user)
+	    return enif_make_list1(env, ATOM(stop));
+	if (res & ERL_NIF_SELECT_STOP_SCHEDULED) // may happen?
+	    return enif_make_list1(env, ATOM(stop));
+	if (res & ERL_NIF_SELECT_READ_CANCELLED) { // return when cancel+read
+	    if ((mask & ERL_NIF_SELECT_READ) &&
+		(mask & ERL_NIF_SELECT_CANCEL))
+		return enif_make_tuple2(env, ATOM(ok), ATOM(cancelled));
+	    return enif_make_tuple2(env, ATOM(error), ATOM(read));
+	}
+	if (res & ERL_NIF_SELECT_WRITE_CANCELLED) {
+	    if ((mask & ERL_NIF_SELECT_WRITE) &&
+		(mask & ERL_NIF_SELECT_CANCEL))
+		return enif_make_tuple2(env, ATOM(ok), ATOM(cancelled));
+	    // bad mask?
+	    return enif_make_tuple2(env, ATOM(error), ATOM(write));
+	}
+	if (res & ERL_NIF_SELECT_ERROR_CANCELLED) {
+	    if ((mask & ERL_NIF_SELECT_ERROR) &&
+		(mask & ERL_NIF_SELECT_CANCEL))
+		return enif_make_tuple2(env, ATOM(ok), ATOM(cancelled));
+	    // bad mask?
+	    return enif_make_tuple2(env, ATOM(error), ATOM(error));
+	}
+    }
+    // == 0 ot res == 0
+    return ATOM(ok);
 }
