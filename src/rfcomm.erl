@@ -141,7 +141,7 @@ listen(AdapterAddr, Channel) ->
 	{ok,RFCOMM} -> 
 	    case bt_rfcomm:bind_(RFCOMM, AdapterAddr, Channel) of
 		ok ->
-		    case bt_rfcomm:listen(RFCOMM) of
+		    case bt_rfcomm:listen_(RFCOMM) of
 			ok -> {ok,RFCOMM};
 			Error -> 
 			    bt_rfcomm:close(RFCOMM),
