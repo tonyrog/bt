@@ -144,6 +144,7 @@ async_accept(L2CAP, Timeout) ->
 			    async_accept(L2CAP, Timeout1) %% FIXME
 		    after
 			Timeout ->
+			    bt_l2cap:select_(L2CAP, [cancel,read]),
 			    {error, timeout}
 		    end;
 		Error ->

@@ -419,7 +419,7 @@ static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
     psm = enif_make_int(env, hp1->addr.l2_psm);
     return make_result(env, hp,
 		       enif_make_tuple2(env, ht,
-					enif_make_tuple(env,bdaddr,psm)));
+					enif_make_tuple2(env,bdaddr,psm)));
 }
 
 

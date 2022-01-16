@@ -417,7 +417,7 @@ static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
     chan = enif_make_int(env, hp1->addr.rc_channel);
     return make_result(env, hp,
 		       enif_make_tuple2(env, ht,
-					enif_make_tuple(env,bdaddr,chan)));
+					enif_make_tuple2(env,bdaddr,chan)));
 }
 
 
