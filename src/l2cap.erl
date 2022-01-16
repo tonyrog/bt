@@ -21,19 +21,32 @@
 
 -module(l2cap).
 
--export([connect/2, connect/4, close/1, send/2, recv/1, 
-	 listen/1, listen/2, accept/1, accept/2]).
+-export([connect/2, connect/3, connect/4, connect/5,
+	 close/1, 
+	 send/2, send/3,
+	 recv/1, recv/2,
+	 listen/1, listen/2,
+	 accept/1, accept/2]).
 
 %% combined open/bind(any)/connect
 connect(Address, Psm) ->
+    connect(Address, Psm, infinity).
+connect(Address, Psm, Timeout) ->
     [#{ bdaddr := Addr}|_] = hci:get_devices(),
-    connect(Addr, 0, Address, Psm).
+    connect(Addr, 0, Address, Psm, Timeout).
+
 connect(AdapterAddress, LocalPsm, Address, Psm) ->
+    connect(AdapterAddress, LocalPsm, Address, Psm, infinity).
+
+connect(AdapterAddress, LocalPsm, Address, Psm, Timeout) ->
     case bt_l2cap:open_() of
 	{ok,L2CAP} -> 
 	    case bt_l2cap:bind_(L2CAP, AdapterAddress, LocalPsm) of
 		ok ->
-		    async_connect(L2CAP, Address, Psm);
+		    TRef = start_timer(Timeout),
+		    Result = async_connect(L2CAP, Address, Psm, TRef),
+		    cancel_timer(TRef),
+		    Result;
 		Error ->
 		    Error
 	    end;
@@ -41,12 +54,11 @@ connect(AdapterAddress, LocalPsm, Address, Psm) ->
     end.
 
 %% fixme: timeout
-async_connect(L2CAP, Address, Psm) ->
+async_connect(L2CAP, Address, Psm, TRef) ->
     case bt_l2cap:connect_(L2CAP, Address, Psm) of
 	{error, einprogress} ->
 	    case bt_l2cap:select_(L2CAP, write) of
 		ok ->
-		    %% FIXME: timeout
 		    receive
 			{select,L2CAP,undefined,_Ready} ->
 			    case bt_l2cap:getpeername(L2CAP) of
@@ -55,7 +67,10 @@ async_connect(L2CAP, Address, Psm) ->
 				Error ->
 				    bt_l2cap:close(L2CAP),
 				    Error
-			    end
+			    end;
+			{timeout,TRef,_} ->
+			    cancel_select(L2CAP, write),
+			    {error, timeout}
 		    end;
 		Error ->
 		    Error
@@ -68,27 +83,30 @@ close(L2CAP) ->
     bt_l2cap:close(L2CAP).
 
 send(L2CAP, Data) ->
-    async_write(L2CAP, iolist_to_binary(Data)).
-
+    send(L2CAP, Data, infinity).
+send(L2CAP, Data, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_write(L2CAP, iolist_to_binary(Data), TRef),
+    cancel_timer(TRef),
+    Result.
+    
 %% FIXME: timeout
-async_write(_L2CAP, <<>>) ->
+async_write(_L2CAP, <<>>, _TRef) ->
     ok;
-async_write(L2CAP, Data) ->
+async_write(L2CAP, Data, TRef) ->
     case bt_l2cap:write_(L2CAP, Data) of
-	{ok, N} ->
-	    if N =:= byte_size(Data) ->
-		    ok;
-	       true ->
-		    <<_:N/binary, Data1/binary>> = Data,
-		    async_write(L2CAP, Data1)
-	    end;
+	{ok, _N} ->
+	    ok;
 	{error, eagain} ->
 	    case bt_l2cap:select_(L2CAP, write) of
 		ok ->
 		    receive
 			{select,L2CAP,undefined,_Ready} ->
-			    io:format("write continue\n", []),
-			    async_write(L2CAP, Data)
+			    %% io:format("write continue\n", []),
+			    async_write(L2CAP, Data, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(L2CAP, write),
+			    {error,timeout}
 		    end;
 		Error ->
 		    Error
@@ -96,6 +114,18 @@ async_write(L2CAP, Data) ->
 	Error ->
 	    Error
     end.
+
+cancel_select(L2CAP, Mode) ->
+    case bt_l2cap:select_(L2CAP, [cancel,Mode]) of
+	{ok,cancelled}  -> ok;
+	_ -> 
+	    %% flush the message
+	    receive
+		{select,L2CAP,undefined,_Ready} -> ok
+	    after 0 -> ok
+	    end
+    end.
+
 
 %% combined open/listen	    
 listen(Psm) ->
@@ -121,31 +151,23 @@ listen(AdapterAddr, Psm) ->
 accept(L2CAP) ->
     accept(L2CAP, infinity).
 
-accept(L2CAP, infinity) ->
-    async_accept(L2CAP, infinity);
-accept(L2CAP, Timeout) when is_integer(Timeout), Timeout > 0 ->
-    async_accept(L2CAP, Timeout).
+accept(L2CAP, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_accept(L2CAP, TRef),
+    cancel_timer(TRef),
+    Result.
 
-async_accept(L2CAP, Timeout) ->
+async_accept(L2CAP, TRef) ->
     case bt_l2cap:accept_(L2CAP) of
-	{error, eagain} when Timeout =:= 0 ->
-	    {error, timeout};
 	{error, eagain} ->
 	    case bt_l2cap:select_(L2CAP, read) of
 		ok ->
 		    receive
 			{select,L2CAP,undefined,_Ready} ->
-			    io:format("accept continue\n", []),
-			    Timeout1 = if is_integer(Timeout) ->
-					       Timeout div 2;
-					  true ->
-					       Timeout
-				       end,
-			    async_accept(L2CAP, Timeout1) %% FIXME
-		    after
-			Timeout ->
-			    %% fixme: flush! if not {ok, cancelled}
-			    bt_l2cap:select_(L2CAP, [cancel,read]),
+			    %% io:format("accept continue\n", []),
+			    async_accept(L2CAP, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(L2CAP, read),
 			    {error, timeout}
 		    end;
 		Error ->
@@ -159,37 +181,42 @@ async_accept(L2CAP, Timeout) ->
     end.
 
 recv(L2CAP) ->
-    async_recv(L2CAP, infinity).
-
-async_recv(L2CAP, Timeout) ->
+    recv(L2CAP, infinity).
+recv(L2CAP, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_recv(L2CAP, TRef),
+    cancel_timer(TRef),
+    Result.
+    
+async_recv(L2CAP, TRef) ->
     case bt_l2cap:read_(L2CAP) of
-	{error, eagain} when Timeout =:= 0 ->
-	    {error, timeout};
 	{error, eagain} ->
 	    case bt_l2cap:select_(L2CAP, read) of
 		ok ->
 		    receive
 			{select,L2CAP,undefined,_Ready} ->
-			    io:format("read continue\n", []),
-			    Timeout1 = if is_integer(Timeout) ->
-					       Timeout div 2;
-					  true ->
-					       Timeout
-				       end,
-			    async_recv(L2CAP, Timeout1) %% FIXME
-		    after
-			Timeout ->
-			    %% fixme: flush! if not {ok, cancelled}
-			    bt_l2cap:select_(L2CAP, [cancel,read]),
+			    %% io:format("read continue\n", []),
+			    async_recv(L2CAP, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(L2CAP, read),
 			    {error, timeout}
 		    end;
 		Error ->
 		    Error
 	    end;
-	{ok, <<>>} ->
-	    {error, closed};
 	{ok, Data} ->
 	    {ok, Data};
 	Error ->
 	    Error
+    end.
+
+start_timer(infinity) -> undefined;
+start_timer(0) -> undefined;
+start_timer(Timeout) -> erlang:start_timer(Timeout, self(), timeout).
+
+cancel_timer(undefined) -> false;
+cancel_timer(TRef) ->
+    erlang:cancel_timer(TRef),
+    receive {timeout,TRef,_} -> ok
+    after 0 -> ok
     end.

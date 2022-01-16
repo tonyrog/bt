@@ -21,19 +21,33 @@
 
 -module(rfcomm).
 
--export([connect/2, connect/4, close/1, send/2, recv/1, 
-	 listen/1, listen/2, accept/1, accept/2]).
+-export([connect/2, connect/3, connect/4, connect/5,
+	 close/1, 
+	 send/2, send/3, 
+	 recv/1, recv/2,
+	 listen/1, listen/2, 
+	 accept/1, accept/2]).
 
 connect(Address, Channel) ->
+    connect(Address, Channel, infinity).
+
+connect(Address, Channel, Timeout) ->
     [#{ bdaddr := Addr}|_] = hci:get_devices(),
-    connect(Addr, 0, Address, Channel).
+    connect(Addr, 0, Address, Channel, Timeout).
 
 connect(AdapterAddress, LocalChannel, Address, Channel) ->
+    connect(AdapterAddress, LocalChannel, Address, Channel, infinity).
+
+connect(AdapterAddress, LocalChannel, Address, Channel, Timeout) ->
     case bt_rfcomm:open_() of
 	{ok,RFCOMM} -> 
 	    case bt_rfcomm:bind_(RFCOMM, AdapterAddress, LocalChannel) of
 		ok ->
-		    async_connect(RFCOMM, Address, Channel);
+		    TRef = start_timer(Timeout),
+		    Result = async_connect(RFCOMM, Address, Channel, TRef),
+		    cancel_timer(TRef),
+		    Result;
+
 		Error ->
 		    Error
 	    end;
@@ -41,7 +55,7 @@ connect(AdapterAddress, LocalChannel, Address, Channel) ->
     end.
 
 %% fixme: timeout
-async_connect(RFCOMM, Address, Channel) ->
+async_connect(RFCOMM, Address, Channel, TRef) ->
     case bt_rfcomm:connect_(RFCOMM, Address, Channel) of
 	{error, einprogress} ->
 	    case bt_rfcomm:select_(RFCOMM, write) of
@@ -54,7 +68,10 @@ async_connect(RFCOMM, Address, Channel) ->
 				Error ->
 				    bt_rfcomm:close(RFCOMM),
 				    Error
-			    end
+			    end;
+			{timeout,TRef,_} ->
+			    cancel_select(RFCOMM, write),
+			    {error, timeout}
 		    end;
 		Error ->
 		    Error
@@ -66,34 +83,53 @@ async_connect(RFCOMM, Address, Channel) ->
 close(RFComm) ->
     bt_rfcomm:close(RFComm).
 
-send(RFCOMM, Data) ->
-    async_write(RFCOMM, iolist_to_binary(Data)).
 
-async_write(_RFCOMM, <<>>) ->
+send(RFCOMM, Data) ->
+    send(RFCOMM, Data, infinity).
+send(RFCOMM, Data, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_write(RFCOMM, iolist_to_binary(Data), TRef),
+    cancel_timer(TRef),
+    Result.
+
+async_write(_RFCOMM, <<>>, _TRef) ->
     ok;
-async_write(RFCOMM, Data) ->
+async_write(RFCOMM, Data, TRef) ->
     case bt_rfcomm:write_(RFCOMM, Data) of
 	{ok, N} ->
 	    if N =:= byte_size(Data) ->
 		    ok;
 	       true ->
 		    <<_:N/binary, Data1/binary>> = Data,
-		    async_write(RFCOMM, Data1)
+		    async_write(RFCOMM, Data1, TRef)
 	    end;
 	{error, eagain} ->
 	    case bt_rfcomm:select_(RFCOMM, write) of
 		ok ->
-		    %% FIXME: timeout
 		    receive
 			{select,RFCOMM,undefined,_Ready} ->
-			    io:format("write continue\n", []),
-			    async_write(RFCOMM, Data)
+			    %% io:format("write continue\n", []),
+			    async_write(RFCOMM, Data, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(RFCOMM, write),
+			    {error,timeout}
 		    end;
 		Error ->
 		    Error
 	    end;
 	Error ->
 	    Error
+    end.
+
+cancel_select(RFCOMM, Mode) ->
+    case bt_rfcomm:select_(RFCOMM, [cancel,Mode]) of
+	{ok,cancelled}  -> ok;
+	_ -> 
+	    %% flush the message
+	    receive
+		{select,RFCOMM,undefined,_Ready} -> ok
+	    after 0 -> ok
+	    end
     end.
 
 %% combined open/listen	    
@@ -120,31 +156,23 @@ listen(AdapterAddr, Channel) ->
 accept(RFCOMM) ->
     accept(RFCOMM, infinity).
 
-accept(RFCOMM, infinity) ->
-    async_accept(RFCOMM, infinity);
-accept(RFCOMM, Timeout) when is_integer(Timeout), Timeout > 0 ->
-    async_accept(RFCOMM, Timeout).
+accept(RFCOMM, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_accept(RFCOMM, TRef),
+    cancel_timer(TRef),
+    Result.
 
-async_accept(RFCOMM, Timeout) ->
+async_accept(RFCOMM, TRef) ->
     case bt_rfcomm:accept_(RFCOMM) of
-	{error, eagain} when Timeout =:= 0 ->
-	    {error, timeout};
 	{error, eagain} ->
 	    case bt_rfcomm:select_(RFCOMM, read) of
 		ok ->
 		    receive
 			{select,RFCOMM,undefined,_Ready} ->
-			    io:format("accept continue\n", []),
-			    Timeout1 = if is_integer(Timeout) ->
-					       Timeout div 2;
-					  true ->
-					       Timeout
-				       end,
-			    async_accept(RFCOMM, Timeout1) %% FIXME
-		    after
-			%% fixme: flush! if not {ok, cancelled}
-			Timeout ->
-			    bt_rfomm:select_(RFCOMM, [cancel,read]),
+			    %% io:format("accept continue\n", []),
+			    async_accept(RFCOMM, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(RFCOMM, read),
 			    {error, timeout}
 		    end;
 		Error ->
@@ -158,37 +186,44 @@ async_accept(RFCOMM, Timeout) ->
     end.
 
 recv(RFCOMM) ->
-    async_recv(RFCOMM, infinity).
+    recv(RFCOMM, infinity).
+recv(RFCOMM, Timeout) ->
+    TRef = start_timer(Timeout),
+    Result = async_recv(RFCOMM, TRef),
+    cancel_timer(TRef),
+    Result.
 
-async_recv(RFCOMM, Timeout) ->
+async_recv(RFCOMM, TRef) ->
     case bt_rfcomm:read_(RFCOMM) of
-	{error, eagain} when Timeout =:= 0 ->
-	    {error, timeout};
 	{error, eagain} ->
 	    case bt_rfcomm:select_(RFCOMM, read) of
 		ok ->
 		    receive
 			{select,RFCOMM,undefined,_Ready} ->
-			    io:format("read continue\n", []),
-			    Timeout1 = if is_integer(Timeout) ->
-					       Timeout div 2;
-					  true ->
-					       Timeout
-				       end,
-			    async_recv(RFCOMM, Timeout1) %% FIXME
-		    after
-			%% fixme: flush! if not {ok, cancelled}
-			Timeout ->
-			    bt_rfomm:select_(RFCOMM, [cancel,read]),
+			    %% io:format("read continue\n", []),
+			    async_recv(RFCOMM, TRef);
+			{timeout,TRef,_} ->
+			    cancel_select(RFCOMM, read),
 			    {error, timeout}
 		    end;
 		Error ->
 		    Error
 	    end;
-	{ok, <<>>} ->
+	{ok, <<>>} -> %% detect close?
 	    {error, closed};
 	{ok, Data} ->
 	    {ok, Data};
 	Error ->
 	    Error
+    end.
+
+start_timer(infinity) -> undefined;
+start_timer(0) -> undefined;
+start_timer(Timeout) -> erlang:start_timer(Timeout, self(), timeout).
+
+cancel_timer(undefined) -> false;
+cancel_timer(TRef) ->
+    erlang:cancel_timer(TRef),
+    receive {timeout,TRef,_} -> ok
+    after 0 -> ok
     end.

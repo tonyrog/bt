@@ -375,13 +375,14 @@ call(Hci,OGF,OCF,Data,Event,Timeout) ->
     end.
 
 wait(Hci,Opcode,Event,Try,Timeout) ->
+    io:format("Start timer timeout=~w\n", [Timeout]),
     TRef = start_timer(Timeout),
     Result = wait_(Hci,Opcode,Event,Try,TRef),
     case Result of
 	timeout ->
-	    cancel_timer(TRef),
 	    {error, timedout};
 	Result ->
+	    cancel_timer(TRef),
 	    Result
     end.
 
@@ -392,22 +393,27 @@ wait_(_Hci,_Opcode,_Event,0,TRef) ->
 wait_(Hci,Opcode,Event,Try,TRef) ->
     ok = bt_hci:select(Hci, read),
     receive
-	{select,Hci,undefined,_Ready} ->
+	{select,Hci,undefined,ready_input} ->
 	    response_(Hci,Opcode,Event,Try,TRef);
 	{timeout,TRef,_} ->
-	    case bt_hci:select(Hci, [cancel,read]) of
-		{ok,cancelled}  -> timeout;
-		_ -> 
-		    %% flush the message
-		    receive 
-			{select,Hci,undefined,_Ready} -> ok
-		    after 0 -> ok
-		    end
-	    end;
+	    cancel_select(Hci, read),
+	    timeout;
 	Other ->
 	    io:format("hci:wait/5 got ~p\n", [Other]),
 	    error
     end.
+
+cancel_select(Hci, Mode) ->
+    case bt_hci:select(Hci, [cancel,Mode]) of
+	{ok,cancelled}  -> ok;
+	_ -> 
+	    %% flush the message
+	    receive
+		{select,Hci,undefined,_Ready} -> ok
+	    after 0 -> ok
+	    end
+    end.
+    
 
 response_(Hci,Opcode,Event,Try,TRef) ->
     case bt_hci:read(Hci) of
