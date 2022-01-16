@@ -161,7 +161,7 @@ service_search_attribute(Address, UUIDList, AttributeList) ->
     
 
 sdp_request(Address, PDU) ->
-    case l2cap:open(Address, ?L2CAP_PSM_SDP) of
+    case l2cap:connect(Address, ?L2CAP_PSM_SDP, 5000) of
 	{ok,L2CAP} ->
 	    Result = sdp_l2cap_request(L2CAP,<<>>,[],PDU),
 	    l2cap:close(L2CAP),
