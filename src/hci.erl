@@ -21,8 +21,10 @@
 -export([dev_class/1]).
 %% -compile(export_all).
 
+-include("../include/bt.hrl").
 -include("../include/hci_drv.hrl").
 -include("hci_api.hrl").
+
 
 -ifdef(debug).
 -define(dbg(F), io:format((F))).
@@ -104,7 +106,7 @@ open(Name) when is_list(Name); Name =:= default ->
     end.
 
 open() ->
-    Hci = bt_hci:open(),
+    {ok,Hci} = bt_hci:open(),
     case bt_hci:get_dev_list(Hci) of
 	{ok,[]} -> {error, enoent};
 	{ok,[{DevID,_}|_]} -> open1_(Hci, DevID);
@@ -293,12 +295,14 @@ read_remote_name(Bdaddr) ->
 
 read_remote_name(Hci, InquiryInfo, Timeout) when is_map(InquiryInfo) ->
     read_remote_name_(Hci, InquiryInfo, Timeout);
-read_remote_name(Hci, Bdaddr, Timeout) when is_binary(Bdaddr) ->
+read_remote_name(Hci, Bdaddr, Timeout) when ?is_bt_address(Bdaddr) ->
     read_remote_name_(Hci,#{ bdaddr => Bdaddr },Timeout);
+read_remote_name(Hci, <<A,B,C,D,E,F>>, Timeout) ->
+    read_remote_name_(Hci,#{ bdaddr => {A,B,C,D,E,F} },Timeout);
 read_remote_name(Hci, Bdaddr, Timeout) when is_list(Bdaddr) ->
-    case bt:getaddr(Bdaddr) of
-	{ok,{A,B,C,D,E,F}} ->
-	    read_remote_name_(Hci, #{ bdaddr => <<F,E,D,C,B,A>> }, Timeout);
+    case bt_util:getaddr(Bdaddr) of
+	{ok,Addr} ->
+	    read_remote_name_(Hci, #{ bdaddr => Addr }, Timeout);
 	Error ->
 	    Error
     end.

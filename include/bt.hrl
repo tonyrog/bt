@@ -33,7 +33,7 @@
 
 
 -define(is_bt_address(A),
-	is_tuple((A)), size((A)) == 6,
+	is_tuple((A)), size((A)) =:= 6,
 	((element(1,(A)) bor element(2,(A)) bor  element(3,(A)) bor
 	  element(4,(A)) bor element(5,(A)) bor  element(6,(A))) band
 	 -16#100 == 0)).
