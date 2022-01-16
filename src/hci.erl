@@ -32,6 +32,8 @@
 -define(dbg(F,A), ok).
 -endif.
 
+-define(GIAC, <<16#33,16#8B,16#9E>>).  %% General Inquiry access code
+-define(LIAC, <<16#00,16#8B,16#9E>>).  %% limited Inquiry access code
 
 -define(DEFAULT_TIMEOUT, 5000).
 -define(INQUIRY_TIMEOUT, 10000).
@@ -47,7 +49,7 @@ map_from_record_(Fields, Size, Record) when is_list(Fields), is_tuple(Record) ->
 
 
 get_devices() ->
-    Hci = hci_drv:open(),
+    {ok,Hci} = bt_hci:open(),
     try get_devices_(Hci) of
 	L -> L
     after
@@ -55,11 +57,11 @@ get_devices() ->
     end.
 
 get_devices_(Hci) ->
-    {ok,Devs} = hci_drv:get_dev_list(Hci),
+    {ok,Devs} = bt_hci:get_dev_list(Hci),
     get_devices_(Hci, Devs).
 
 get_devices_(Hci, [{DevID,_}|Ds]) ->
-    case hci_drv:get_dev_info(Hci, DevID) of
+    case bt_hci:get_dev_info(Hci, DevID) of
 	{ok,Info} ->
 	    [?map_from_record(hci_dev_info,Info) |
 	     get_devices_(Hci, Ds)];
@@ -70,11 +72,11 @@ get_devices_(_Hci, []) ->
     [].
 
 find_device_(Hci, Name) ->
-    {ok,Ds} = hci_drv:get_dev_list(Hci),
+    {ok,Ds} = bt_hci:get_dev_list(Hci),
     find_device_(Hci, Name, Ds).
 
 find_device_(Hci, Name, [{DevID,_}|Ds]) ->
-    case hci_drv:get_dev_info(Hci, DevID) of
+    case bt_hci:get_dev_info(Hci, DevID) of
 	{ok,Info} ->
 	    if Info#hci_dev_info.name =:= Name; Name =:= default ->
 		    ?map_from_record(hci_dev_info,Info);
@@ -89,45 +91,43 @@ find_device_(_Hci, _Name, []) ->
 
 	    
 open(DevID) when is_integer(DevID) ->
-    open1_(hci_drv:open(), DevID);
+    {ok,H} = bt_hci:open(),
+    open1_(H, DevID);
 open(Name) when is_list(Name); Name =:= default ->
-    Hci = hci_drv:open(),
+    {ok,Hci} = bt_hci:open(),
     case find_device_(Hci, Name) of
 	false ->
-	    hci_drv:close(),
+	    bt_hci:close(),
 	    {error, enoent};
 	DevInfo ->
 	    open1_(Hci, maps:get(dev_id, DevInfo))
     end.
 
 open() ->
-    Hci = hci_drv:open(),
-    case hci_drv:get_dev_list(Hci) of
+    Hci = bt_hci:open(),
+    case bt_hci:get_dev_list(Hci) of
 	{ok,[]} -> {error, enoent};
 	{ok,[{DevID,_}|_]} -> open1_(Hci, DevID);
 	{error,_}=Error -> Error
     end.
 
 open1_(Hci, DevID) ->
-    case hci_drv:bind(Hci, DevID) of
-	ok ->
-	    hci_drv:activate(Hci),
-	    {ok,Hci};
+    case bt_hci:bind(Hci, DevID) of
+	ok -> {ok,Hci};
 	Error -> Error
     end.
 
-
 close(Hci) ->
-    hci_drv:close(Hci).
+    bt_hci:close(Hci).
 
 %% dump information about bluetooth devices
 i() ->
-    Hci = hci_drv:open(),
-    case hci_drv:get_dev_list(Hci) of
+    {ok,Hci} = bt_hci:open(),
+    case bt_hci:get_dev_list(Hci) of
 	{ok,Devs} ->
 	    lists:foreach(
 	      fun({DevID,_DevFlags}) ->
-		      case hci_drv:get_dev_info(Hci, DevID) of
+		      case bt_hci:get_dev_info(Hci, DevID) of
 			  {ok, Info} ->
 			      io:format("~s\n", 
 					[hci_util:format_hci_dev_info(Info)]);
@@ -167,7 +167,7 @@ scan(Name) when is_list(Name) ->
 scan(Name, Timeout) ->
     case open(Name) of
 	{ok,Hci} ->
-	    case hci_drv:inquiry(Hci, Timeout, 10, 0, 0) of
+	    case bt_hci:inquiry(Hci, Timeout, 10, ?GIAC, 0) of
 		{ok,Is} ->
 		    lists:foldl(
 		      fun(I,Acc) ->
@@ -303,13 +303,15 @@ read_remote_name(Hci, Bdaddr, Timeout) when is_list(Bdaddr) ->
 	    Error
     end.
     
-read_remote_name_(Hci, InquiryInfo = #{ bdaddr := Bdaddr }, Timeout) ->
+read_remote_name_(Hci, InquiryInfo = #{ bdaddr := Bdaddr0 }, Timeout) ->
     Pscan_rep_mode = maps:get(pscan_rep_mode, InquiryInfo, 16#02),
     Pscan_mode     = maps:get(pscan_mode, InquiryInfo, 16#00),
     Clock_offset    = case maps:get(clock_offset,InquiryInfo,undefined) of
 			  undefined -> 16#0000;
 			  Offset -> Offset bor 16#8000
 		      end,
+    Bdaddr = list_to_binary(lists:reverse(tuple_to_list(Bdaddr0))),
+    %% Bdaddr = list_to_binary(tuple_to_list(Bdaddr0)),
     case call(Hci,?OGF_LINK_CTL,?OCF_REMOTE_NAME_REQ,
 	      <<?remote_name_req_cp_bin(Bdaddr,Pscan_rep_mode,Pscan_mode,
 					Clock_offset)>>,
@@ -340,7 +342,7 @@ read_local_name(Hci, Timeout) ->
 send(Hci,Opcode,Data) ->
     Pkt = <<?HCI_COMMAND_PKT,Opcode:16/little,
 	    (byte_size(Data)):8,Data/binary>>,
-    R = hci_drv:send(Hci,Pkt),
+    R = bt_hci:write(Hci,Pkt),
     ?dbg("send ~p = ~p\n", [Pkt,R]),
     R.
 
@@ -349,20 +351,20 @@ send(Hci, OGF, OCF, Data) ->
 
 call(Hci,OGF,OCF,Data,Event,Timeout) ->
     Opcode = ?cmd_opcode_pack(OGF,OCF),
-    {ok,OldFilter} = hci_drv:get_filter(Hci),
+    {ok,OldFilter} = bt_hci:get_filter(Hci),
     %% ?dbg("call: saved_filter = ~p\n", [OldFilter]),
-    NewFilter = hci_drv:make_filter(Opcode,
+    NewFilter = bt_hci:make_filter(Opcode,
 				    [?HCI_EVENT_PKT],
 				    [?EVT_CMD_STATUS,
 				     ?EVT_CMD_COMPLETE,
 				     ?EVT_LE_META_EVENT,
 				     Event]),
     %% ?dbg("call: new_filter = ~p\n", [NewFilter]),
-    case hci_drv:set_filter(Hci, NewFilter) of
+    case bt_hci:set_filter(Hci, NewFilter) of
 	ok ->
-	    true = send(Hci,Opcode,Data),
+	    {ok,_} = send(Hci,Opcode,Data),
 	    Reply = wait(Hci,Opcode,Event,10,Timeout),
-	    hci_drv:set_filter(Hci, OldFilter),
+	    bt_hci:set_filter(Hci, OldFilter),
 	    Reply;
 	Error ->
 	    Error
@@ -384,8 +386,20 @@ wait_(_Hci,_Opcode,_Event,0,TRef) ->
     {error, timedout};
 
 wait_(Hci,Opcode,Event,Try,TRef) ->
+    ok = bt_hci:select(Hci, read),
     receive
-	{Hci,_Data0={data,<<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>}} ->
+	{select,Hci,undefined,_Ready} ->
+	    response_(Hci,Opcode,Event,Try,TRef);
+	{timeout,TRef,_} ->
+	    timeout;
+	Other ->
+	    io:format("hci:wait/5 got ~p\n", [Other]),
+	    error
+    end.
+
+response_(Hci,Opcode,Event,Try,TRef) ->
+    case bt_hci:read(Hci) of
+	{ok, _Data0 = <<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>} ->
 	    ?dbg("Got data ~p\n", [_Data0]),
 	    case Evt of
 		?EVT_CMD_STATUS ->
@@ -432,9 +446,11 @@ wait_(Hci,Opcode,Event,Try,TRef) ->
 		    ?dbg("got event ~p\n", [Evt]),
 		    {ok,Packet}
 	    end;
-
-	{timeout,TRef,_} ->
-	    timeout
+	{ok, _Data0} ->
+	    ?dbg("Got data ~p\n", [_Data0]),
+            wait_(Hci,Opcode,Event,Try-1,TRef);
+        Error = {error,_} ->
+            Error
     end.
 
 start_timer(0) -> undefined;

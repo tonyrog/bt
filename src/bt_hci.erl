@@ -30,10 +30,10 @@
 -export([set_filter/2]).
 -export([get_filter/1]).
 %% 
--export([debug_/2]).
--export([write_/2]).
--export([read_/1]).
--export([select_/2]).
+-export([debug/2]).
+-export([write/2]).
+-export([read/1]).
+-export([select/2]).
 
 -export([set_filter_ptype/2]).
 -export([clr_filter_ptype/2]).
@@ -181,19 +181,19 @@ set_filter(_Hci, _Filter) -> ?nif_stub().
 -spec get_filter(Hci::handle()) -> ok | {error, reason()}.
 get_filter(_Hci) ->  ?nif_stub().
 
--spec debug_(Hci::handle(), Level::integer()) -> ok.
-debug_(_Hci, _Level) -> ?nif_stub().
+-spec debug(Hci::handle(), Level::integer()) -> ok.
+debug(_Hci, _Level) -> ?nif_stub().
 
--spec write_(Hci::handle(), Data::binary()) -> ok.
-write_(_Hci, _Data) -> ?nif_stub().
+-spec write(Hci::handle(), Data::binary()) -> ok.
+write(_Hci, _Data) -> ?nif_stub().
 
--spec read_(Hci::handle()) -> binary().
-read_(_Hci) -> ?nif_stub().
+-spec read(Hci::handle()) -> binary().
+read(_Hci) -> ?nif_stub().
     
--spec select_(Handle::handle(), Mode::read|write) ->
+-spec select(Handle::handle(), Mode::read|write) ->
 	  ok | {error, reason()}.
 
-select_(_Handle, _Mode) ->
+select(_Handle, _Mode) ->
     ?nif_stub().
 
 %%

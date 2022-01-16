@@ -1,5 +1,5 @@
 //
-// RFCOMM
+// SCO
 //
 #include <stdio.h>
 #include <stdint.h>
@@ -10,13 +10,13 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <bluetooth/bluetooth.h>
-#include <bluetooth/rfcomm.h>
+#include <bluetooth/sco.h>
 
 #include "erl_nif.h"
 #include "erl_driver.h"
 #include "bt_lib.h"
 
-#define MAX_RFCOMM_BUF 65536
+#define MAX_SCO_BUF 65536
 
 //#define DEBUG
 //#define NIF_TRACE
@@ -69,18 +69,19 @@ static void unload(ErlNifEnv* env, void* priv_data);
 
 #define NIF_LIST \
     NIF("open_", 0,  nif_open)  \
-    NIF("bind_", 3,  nif_bind)  \
+    NIF("bind_", 2,  nif_bind)  \
     NIF("close", 1, nif_close) \
     NIF("listen_", 1, nif_listen) \
-    NIF("connect_", 3,  nif_connect)  \
+    NIF("connect_", 2,  nif_connect)  \
     NIF("accept_", 1, nif_accept) \
-    NIF("getsockname", 1, nif_getsockname) \
+    NIF("get_conninfo", 1, nif_get_conninfo)	\
+    NIF("getsockname", 1, nif_getsockname)	\
     NIF("getpeername", 1, nif_getpeername) \
     NIF("write_", 2, nif_write) \
     NIF("read_", 1,  nif_read) \
     NIF("select_", 2,  nif_select)
 
-static ErlNifResourceType* rfcomm_r;
+static ErlNifResourceType* sco_r;
 
 typedef enum {
     UNDEFINED   = 0x00,
@@ -95,7 +96,7 @@ typedef enum {
 typedef struct _handle_t {
     ErlNifMutex*  access_mtx;
     int           access_count;
-    struct sockaddr_rc addr;      // peer address/connect/accept
+    struct sockaddr_sco addr;      // peer address/connect/accept
     hstate_t      state;
     int           fd;
 } handle_t;
@@ -107,6 +108,8 @@ DECL_ATOM(select);
 DECL_ATOM(read);
 DECL_ATOM(write);
 DECL_ATOM(no_such_handle);
+
+DECL_ATOM(sco_conninfo);
 
 // Declare all nif functions
 #undef NIF
@@ -177,7 +180,7 @@ static int get_handle(ErlNifEnv* env, ERL_NIF_TERM arg,handle_t** handle_ptr,
 
     if (!enif_is_ref(env, arg))
 	return -1;  // badarg
-    if (!enif_get_resource(env, arg, rfcomm_r, (void **)&hp))
+    if (!enif_get_resource(env, arg, sco_r, (void **)&hp))
 	return 0;   // no a valid reource handle / remove / closed
     DEBUGF("get_handle: hp=%p, fd=%d, state=0x%x, some=%x, none=%x",
 	   hp, hp->fd, hp->state, some, none);
@@ -213,7 +216,7 @@ static void done_handle(ErlNifEnv* env, handle_t* hp)
 			hp, NULL, ATOM(undefined));
 	}
 	else if (hp->fd >= 0) {
-	    ERRORF("bt_rfcomm: force closing %d", hp->fd); // for real?
+	    ERRORF("bt_sco: force closing %d", hp->fd); // for real?
 	    close(hp->fd);
 	    hp->state = UNDEFINED;
 	    hp->fd = -1;
@@ -266,10 +269,10 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
     int fd;
     ERL_NIF_TERM ht;
     
-    if ((fd = socket(PF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM))  < 0)
+    if ((fd = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_SCO))  < 0)
 	return make_error(env, errno);
 
-    if ((hp = enif_alloc_resource(rfcomm_r, sizeof(handle_t))) == NULL) {
+    if ((hp = enif_alloc_resource(sco_r, sizeof(handle_t))) == NULL) {
 	int err = errno;
 	close(fd);
 	return make_error(env, err);
@@ -281,7 +284,7 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
 	return make_error(env, err);
     }
     memset(hp, 0, sizeof(handle_t));
-    hp->access_mtx = enif_mutex_create("rfcomm_access");
+    hp->access_mtx = enif_mutex_create("sco_access");
     hp->fd = fd;
     hp->state = OPEN;
     ht = enif_make_resource(env, hp);
@@ -289,21 +292,19 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
     return enif_make_tuple2(env, ATOM(ok), ht);
 }
 
-// listen(Handle::ref(), Address::btaddress(), Psm::integer())
+// listen(Handle::ref(), Address::btaddress())
 static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
     handle_t* hp;    
-    int chan;
-    struct sockaddr_rc addr = { 0 };
+    bdaddr_t bdaddr;
+    struct sockaddr_sco addr = { 0 };
 
-    if (!get_bdaddr(env, argv[1], &addr.rc_bdaddr))
+    if (!get_bdaddr(env, argv[1], &bdaddr))
 	return BADARG(env);
-    if (!enif_get_int(env, argv[2], &chan))
-	return BADARG(env);
-    addr.rc_family = AF_BLUETOOTH;
-    addr.rc_channel = (uint8_t) chan;
+    addr.sco_family = AF_BLUETOOTH;
+    addr.sco_bdaddr = bdaddr;
 
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
@@ -331,7 +332,7 @@ static ERL_NIF_TERM nif_close(ErlNifEnv* env, int argc,
     default: break;
     }
 
-    DEBUGF("nif_close: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    DEBUGF("nif_close: hp=%p, fd=%d, state=0x%x", hp, hp->fd, hp->state);
 
     enif_mutex_lock(hp->access_mtx);
     if (hp->fd >= 0) {
@@ -345,18 +346,18 @@ static ERL_NIF_TERM nif_close(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-// connect(Handle::ref(), Address::btaddress(), Chan::integer())
+// connect(Handle::ref(), Address::btaddress(), Psm::integer())
 static ERL_NIF_TERM nif_connect(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
     handle_t* hp;    
-    int chan;
+    int psm;
     bdaddr_t bdaddr;    
 
     if (!get_bdaddr(env, argv[1], &bdaddr))
 	return BADARG(env);
-    if (!enif_get_int(env, argv[2], &chan))
+    if (!enif_get_int(env, argv[2], &psm))
 	return BADARG(env);
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {  // BOUND?
     case -1: return enif_make_badarg(env);
@@ -364,11 +365,10 @@ static ERL_NIF_TERM nif_connect(ErlNifEnv* env, int argc,
     default: break;
     }
     memset(&hp->addr, 0, sizeof(hp->addr));
-    hp->addr.rc_family = AF_BLUETOOTH;
-    hp->addr.rc_channel = chan;
-    hp->addr.rc_bdaddr = bdaddr;
+    hp->addr.sco_family = AF_BLUETOOTH;
+    hp->addr.sco_bdaddr = bdaddr;
 
-    DEBUGF("nif_connect: hp=%p, close fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    DEBUGF("nif_connect: hp=%p, fd=%d, state=0x%x", hp, hp->fd, hp->state);
 
     if (connect(hp->fd, (struct sockaddr *)&hp->addr, sizeof(hp->addr))  < 0) {
 	if (errno == EINPROGRESS)
@@ -380,15 +380,15 @@ static ERL_NIF_TERM nif_connect(ErlNifEnv* env, int argc,
 }
 
 
-// accept(ListenHandle::ref()) -> {ok,Handle} | {error, Reason}
+// accept(ListenHandle::ref()) -> {ok,{Handle,BdAddr}} | {error, Reason}
 static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
 			       const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
     handle_t* hp;
     handle_t* hp1;
-    socklen_t opt = sizeof(struct sockaddr_rc);
-    ERL_NIF_TERM bdaddr, chan;
+    socklen_t opt = sizeof(struct sockaddr_sco);
+    ERL_NIF_TERM bdaddr;
     ERL_NIF_TERM ht;
     int fd;
 
@@ -400,23 +400,20 @@ static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
     fd = accept(hp->fd, (struct sockaddr*) &hp->addr, &opt);
     if (fd < 0)
 	return make_herror(env, hp, errno);
-    if ((hp1 = enif_alloc_resource(rfcomm_r, sizeof(handle_t))) == NULL) {
+    if ((hp1 = enif_alloc_resource(sco_r, sizeof(handle_t))) == NULL) {
 	int err = errno;
 	close(fd);
 	return make_herror(env, hp, err);
     }
     memset(hp1, 0, sizeof(handle_t));
-    hp1->access_mtx = enif_mutex_create("rfcomm_access");
+    hp1->access_mtx = enif_mutex_create("sco_access");
     hp1->fd = fd;
     hp1->state |= CONNECTED;
     hp1->addr = hp->addr;
     ht = enif_make_resource(env, hp1);
     enif_release_resource(hp1);
-    bdaddr = make_bdaddr(env, &hp1->addr.rc_bdaddr);
-    chan = enif_make_int(env, hp1->addr.rc_channel);
-    return make_result(env, hp,
-		       enif_make_tuple2(env, ht,
-					enif_make_tuple(env,bdaddr,chan)));
+    bdaddr = make_bdaddr(env, &hp1->addr.sco_bdaddr);
+    return make_result(env, hp, enif_make_tuple2(env, ht, bdaddr));
 }
 
 
@@ -444,9 +441,9 @@ static ERL_NIF_TERM nif_getsockname(ErlNifEnv* env, int argc,
 {
     UNUSED(argc);
     handle_t* hp;
-    struct sockaddr_rc addr;
+    struct sockaddr_sco addr;
     socklen_t len;
-    ERL_NIF_TERM bdaddr, chan;
+    ERL_NIF_TERM bdaddr;
 
     switch(get_handle(env, argv[0], &hp, BOUND, 0)) {
     case -1: return enif_make_badarg(env);
@@ -459,9 +456,8 @@ static ERL_NIF_TERM nif_getsockname(ErlNifEnv* env, int argc,
     if (getsockname(hp->fd, (struct sockaddr *) &addr, &len) < 0)
 	return make_herror(env, hp, errno);
 
-    bdaddr = make_bdaddr(env, &addr.rc_bdaddr);
-    chan = enif_make_int(env, addr.rc_channel);
-    return make_result(env, hp, enif_make_tuple2(env,bdaddr,chan));
+    bdaddr = make_bdaddr(env, &addr.sco_bdaddr);
+    return make_result(env, hp, bdaddr);
 }
 
 static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
@@ -469,9 +465,9 @@ static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
 {
     UNUSED(argc);    
     handle_t* hp;
-    struct sockaddr_rc addr;
+    struct sockaddr_sco addr;
     socklen_t len;
-    ERL_NIF_TERM bdaddr, chan;
+    ERL_NIF_TERM bdaddr;
 
     switch(get_handle(env, argv[0], &hp, CONNECTED|CONNECTING, 0)) {
     case -1: return enif_make_badarg(env);
@@ -484,11 +480,36 @@ static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
     if (getpeername(hp->fd, (struct sockaddr *) &addr, &len) < 0)
 	return make_herror(env, hp, errno);
     hp->state = (hp->state & ~CONNECTING) | CONNECTED;     // FIXME
-    bdaddr = make_bdaddr(env, &addr.rc_bdaddr);
-    chan = enif_make_int(env, addr.rc_channel);
-    return make_result(env, hp, enif_make_tuple2(env,bdaddr,chan));
+    bdaddr = make_bdaddr(env, &addr.sco_bdaddr);
+    return make_result(env, hp, bdaddr);
 }
 
+static ERL_NIF_TERM nif_get_conninfo(ErlNifEnv* env, int argc,
+				     const ERL_NIF_TERM argv[])
+{
+    UNUSED(argc);    
+    handle_t* hp;    
+    struct sco_conninfo info;
+    socklen_t optlen = sizeof(info);
+    ERL_NIF_TERM dev_class;
+    ERL_NIF_TERM res;
+
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
+    case -1: return enif_make_badarg(env);
+    case 0:  return make_bad_handle(env);
+    default: break;
+    }    
+    if (getsockopt(hp->fd, SOL_SCO, SCO_CONNINFO, &info, &optlen ) < 0)
+	return make_herror(env, hp, errno);
+    
+    memcpy(enif_make_new_binary(env, 3, &dev_class), info.dev_class, 3);
+    res = enif_make_tuple3(env,
+			   ATOM(sco_conninfo),
+			   enif_make_uint(env, info.hci_handle),
+			   dev_class);
+    return make_result(env, hp, res);
+}
+    
 // write(Handle::ref(), Data::binary())
 static ERL_NIF_TERM nif_write(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
@@ -518,7 +539,7 @@ static ERL_NIF_TERM nif_read(ErlNifEnv* env, int argc,
     UNUSED(argc);
     handle_t* hp;
     uint8_t* ptr;
-    unsigned char buffer[MAX_RFCOMM_BUF];
+    unsigned char buffer[MAX_SCO_BUF];
     ERL_NIF_TERM data;
     int n;
 
@@ -613,6 +634,8 @@ static int load_atoms(ErlNifEnv* env)
     LOAD_ATOM(read);
     LOAD_ATOM(write);
     LOAD_ATOM(no_such_handle);
+    
+    LOAD_ATOM(sco_conninfo);    
     return 0;
 }
 
@@ -629,8 +652,8 @@ static int load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     cb.stop = (ErlNifResourceStop*) stop;
     cb.down = (ErlNifResourceDown*) down;
     
-    if ((rfcomm_r =
-	 enif_open_resource_type_x(env, "rfcomm",
+    if ((sco_r =
+	 enif_open_resource_type_x(env, "sco",
 				   &cb, ERL_NIF_RT_CREATE,
 				   &tried)) == NULL) {
 	return -1;
@@ -657,7 +680,7 @@ static int upgrade(ErlNifEnv* env, void** priv_data,
     cb.stop = (ErlNifResourceStop*) stop;
     cb.down = (ErlNifResourceDown*) down;
 
-    if ((rfcomm_r = enif_open_resource_type_x(env, "rfcomm", &cb,
+    if ((sco_r = enif_open_resource_type_x(env, "sco", &cb,
 					     ERL_NIF_RT_CREATE|
 					     ERL_NIF_RT_TAKEOVER,
 					     &tried)) == NULL) {
@@ -676,4 +699,4 @@ static void unload(ErlNifEnv* env, void* priv_data)
     DEBUGF("unload%s", "");
 }
 
-ERL_NIF_INIT(bt_rfcomm, nif_funcs, load, NULL, upgrade, unload)
+ERL_NIF_INIT(bt_sco, nif_funcs, load, NULL, upgrade, unload)

@@ -17,6 +17,10 @@
 
 #include "erl_nif.h"
 #include "erl_driver.h"
+#include "bt_lib.h"
+
+//#define DEBUG
+//#define NIF_TRACE
 
 #define UNUSED(a) ((void) a)
 
@@ -38,7 +42,6 @@
 #define DECL_ATOM(name) \
     ERL_NIF_TERM atm_##name = 0
 
-// require env in context (ugly)
 #define LOAD_ATOM(name)			\
     atm_##name = enif_make_atom(env,#name)
 
@@ -107,10 +110,10 @@ static void unload(ErlNifEnv* env, void* priv_data);
     NIF("inquiry", 6, nif_inquiry)			\
     NIF("set_filter", 2, nif_set_filter)		\
     NIF("get_filter", 1, nif_get_filter)		\
-    NIF("debug_", 2, nif_debug)				\
-    NIF("write_", 2, nif_write)				\
-    NIF("read_", 1,  nif_read)				\
-    NIF("select_", 2,  nif_select)
+    NIF("debug", 2, nif_debug)				\
+    NIF("write", 2, nif_write)				\
+    NIF("read", 1,  nif_read)				\
+    NIF("select", 2,  nif_select)
     
 static ErlNifResourceType* hci_r;
 
@@ -175,8 +178,6 @@ static ErlNifFunc nif_funcs[] =
 {
     NIF_LIST
 };
-
-
 
 static void* realloc_buffer(handle_t* hp, size_t len)
 {
@@ -319,103 +320,6 @@ static ERL_NIF_TERM make_ok(ErlNifEnv* env, handle_t* handle)
     return ATOM(ok);
 }
 
-// return 0 if error otherwise 1,2 or 3
-// 1 -  ...x  (last one digit)
-// 2 -  ..xy  (last two digits)
-// 2 -  x:..  (middl one digit)
-// 3 -  xy:..  (middl two digits)
-int get_hex_byte(char* ptr, char* ptr_end, int* value_ptr)
-{
-    uint8_t x = 0;
-    int c;
-
-    if (ptr >= ptr_end)
-	return 0;
-    c = *ptr++;
-    if ((c >= '0') && (c <= '9')) x = (c-'0');
-    else if ((c >= 'a') && (c <= 'f')) x = 10+(c-'a');
-    else if ((c >= 'A') && (c <= 'F')) x = 10+(c-'A');
-    else return 0;
-    if (ptr >= ptr_end) {
-	*value_ptr = x;
-	return 1;
-    }
-    c = *ptr++;
-    if ((c >= '0') && (c <= '9')) x = (x<<4) + (c-'0');
-    else if ((c >= 'a') && (c <= 'f')) x = (x<<4) + 10+(c-'a');
-    else if ((c >= 'A') && (c <= 'F')) x = (x<<4) + 10+(c-'A');
-    else if (c == ':') {
-	*value_ptr = x;
-	return 2;
-    }
-    else
-	return 0;
-    if (ptr >= ptr_end) {
-	*value_ptr = x;
-	return 2;
-    }
-    if (*ptr == ':') {
-	*value_ptr = x;
-	return 3;
-    }
-    return 0;
-}
-
-
-int get_bdaddr(ErlNifEnv* env, ERL_NIF_TERM arg, bdaddr_t* addr)
-{
-    ErlNifBinary bin;
-    const ERL_NIF_TERM* taddr;
-    int arity;
-
-    DEBUGF("get_bdaddr: %T", arg);
-    
-    if (enif_inspect_iolist_as_binary(env,arg,&bin)) {
-	if (bin.size == 6) { // assume binary address
-	    memcpy(addr->b, bin.data, bin.size);
-	    return 1;
-	}
-	else { // check for ascii encoded address
-	    char* ptr = (char*) bin.data;
-	    char* ptr_end = (char*) bin.data + bin.size;
-	    int i = 0;
-	    for (i = 0; i < 6; i++) {
-		int offs;
-		int b;
-		if ((offs = get_hex_byte(ptr, ptr_end, &b)) == 0)
-		    return 0;
-		addr->b[5-i] = b;
-		DEBUGF("b[%d] = %x", 5-i, b);
-		ptr += offs;
-	    }
-	    if (ptr == ptr_end)
-		return 1;
-	}
-	return 0;	
-    }
-    else if (enif_get_tuple(env, arg, &arity, &taddr) && (arity == 6)) {
-	int i, b;
-	for (i = 0; i < 6; i++) {
-	    if (!enif_get_int(env, taddr[i], &b))
-		return 0;
-	    addr->b[5-i] = b;
-	}
-	return 1;
-    }
-    return 0;
-}
-
-ERL_NIF_TERM make_bdaddr(ErlNifEnv* env, bdaddr_t* addr)
-{
-    return enif_make_tuple6(env,
-			    enif_make_int(env, addr->b[5]),
-			    enif_make_int(env, addr->b[4]),
-			    enif_make_int(env, addr->b[3]),
-			    enif_make_int(env, addr->b[2]),
-			    enif_make_int(env, addr->b[1]),
-			    enif_make_int(env, addr->b[0]));
-}
-
 // match hci_drv.hrl record(hci_filter) !
 static ERL_NIF_TERM make_hci_filter(ErlNifEnv* env, struct hci_filter* fp)
 {
@@ -524,32 +428,22 @@ static ERL_NIF_TERM make_inquiry_info(ErlNifEnv* env, inquiry_info* ip)
 			   enif_make_uint(env, ip->clock_offset));
 }
 
-int set_nonblock(int fd)
-{
-   int flags;
-#if defined(O_NONBLOCK)
-    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
-        flags = 0;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-#else
-    flags = 1;
-    return ioctl(fd, FIOBIO, &flags);
-#endif
-}
 
 // get_dev_id
-// argc == 1  func(handle) return hp->dev_id if bound error otherwise
-// argc == 2  func(handle, dev_id)  return dev_id error otherwise
 //
-static int get_dev_id(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[],
-		     handle_t* hp, int* dev_id_ptr)
+static int get_dev_id(ErlNifEnv* env, int nargs,
+		      int argc, const ERL_NIF_TERM argv[],
+		      handle_t* hp, int* dev_id_ptr)
 {
-    if ((argc == 1) && (hp->state & BOUND)) {
+    if (argc >= nargs) {
+	if (!enif_get_int(env, argv[1], dev_id_ptr))
+	    return 0;
+	return 2;
+    }
+    else if (hp->state & BOUND) {
 	*dev_id_ptr = hp->dev_id;
 	return 1;
     }
-    else if (argc >= 2)
-	return enif_get_int(env, argv[1], dev_id_ptr);
     return 0;
 }
 
@@ -564,7 +458,7 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
     ERL_NIF_TERM ht;
     
     if ((fd = socket(PF_BLUETOOTH,
-		     SOCK_NONBLOCK | SOCK_RAW | SOCK_CLOEXEC,
+		     SOCK_RAW | SOCK_CLOEXEC,
 		     BTPROTO_HCI))  < 0)
 	return make_error(env, errno);
 
@@ -574,7 +468,7 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
 	return make_error(env, err);
     }
     DEBUGF("open_ hp = %p", hp);
-    if (set_nonblock(fd) < 0) {
+    if (set_nonblock(fd, 1) < 0) {
 	int err = errno;
 	close(fd);
 	return make_error(env, err);
@@ -691,7 +585,7 @@ static ERL_NIF_TERM nif_dev_up(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
     if (ioctl(hp->fd, HCIDEVUP, dev_id) < 0)
 	return make_herror(env, hp, errno);
@@ -712,7 +606,7 @@ static ERL_NIF_TERM nif_dev_down(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
     if (ioctl(hp->fd, HCIDEVDOWN, dev_id) < 0)
 	return make_herror(env, hp, errno);
@@ -733,7 +627,7 @@ static ERL_NIF_TERM nif_dev_reset(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
     if (ioctl(hp->fd, HCIDEVRESET, dev_id) < 0)
 	return make_herror(env, hp, errno);
@@ -754,7 +648,7 @@ static ERL_NIF_TERM nif_dev_restat(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
     if (ioctl(hp->fd, HCIDEVRESTAT, dev_id) < 0)
 	return make_herror(env, hp, errno);
@@ -811,7 +705,7 @@ static ERL_NIF_TERM nif_get_dev_info(ErlNifEnv* env, int argc,
     default: break;
     }
 
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
     di.dev_id = dev_id;
     if (ioctl(hp->fd, HCIGETDEVINFO, &di) < 0)
@@ -837,7 +731,7 @@ static ERL_NIF_TERM nif_get_conn_list(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
 
     if ((cl = realloc_buffer(hp, sz)) == NULL)
@@ -912,12 +806,12 @@ static ERL_NIF_TERM nif_set_raw(ErlNifEnv* env, int argc,
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!get_dev_id(env, 2, argc, argv, hp, &dev_id))
 	return make_hbadarg(env, hp);
 
     if (ioctl(hp->fd, HCISETRAW, dev_id) < 0)
 	return make_herror(env, hp, errno);
-    return ATOM(ok);
+    return make_ok(env, hp);
 }
 
 // set_scan(Hci::handle(), Opt::uint32()) -> ok ||
@@ -929,21 +823,22 @@ static ERL_NIF_TERM nif_set_scan(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     uint32_t dev_opt;
-
+    int i;
+    
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (enif_get_uint(env, argv[argc-1], &dev_opt))
+    if (!enif_get_uint(env, argv[i], &dev_opt))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
     dr.dev_opt = dev_opt;
     if (ioctl(hp->fd, HCISETSCAN, (void*) &dr) < 0)
 	return make_herror(env, hp, errno);
-    return ATOM(ok);
+    return make_ok(env, hp);
 }
 
 // set_auth(Hci::handle(), enabled|disabled) -> ok ||
@@ -955,20 +850,20 @@ static ERL_NIF_TERM nif_set_auth(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     int dev_opt;
-    
+    int i;
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
-    if (argv[argc-1] == ATOM(enabled))
+    if (argv[i] == ATOM(enabled))
 	dr.dev_opt = AUTH_ENABLED;
-    else if (argv[argc-1] == ATOM(disabled))
+    else if (argv[i] == ATOM(disabled))
 	dr.dev_opt = AUTH_DISABLED;
-    else if (enif_get_int(env, argv[argc-1], &dev_opt))
+    else if (enif_get_int(env, argv[i], &dev_opt))
 	dr.dev_opt = dev_opt ? AUTH_ENABLED : AUTH_DISABLED;
     else
 	return make_hbadarg(env, hp);
@@ -986,20 +881,21 @@ static ERL_NIF_TERM nif_set_encrypt(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;    
     int dev_opt;
+    int i;
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
-    if (argv[argc-1] == ATOM(p2p))
+    if (argv[i] == ATOM(p2p))
 	dr.dev_opt = ENCRYPT_P2P;
-    else if (argv[argc-1] == ATOM(disabled))
+    else if (argv[i] == ATOM(disabled))
 	dr.dev_opt = ENCRYPT_DISABLED;
-    else if (enif_get_int(env, argv[argc-1], &dev_opt))
+    else if (enif_get_int(env, argv[i], &dev_opt))
 	dr.dev_opt = dev_opt ? ENCRYPT_P2P : ENCRYPT_DISABLED;
     else
 	return make_hbadarg(env, hp);
@@ -1017,15 +913,16 @@ static ERL_NIF_TERM nif_set_ptype(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     uint32_t dev_opt;
+    int i;
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-1], &dev_opt))
+    if (!enif_get_uint(env, argv[i], &dev_opt))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
     dr.dev_opt = dev_opt;
@@ -1041,15 +938,16 @@ static ERL_NIF_TERM nif_set_link_policy(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     uint32_t dev_opt;
+    int i;
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i = get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-1], &dev_opt))
+    if (!enif_get_uint(env, argv[i], &dev_opt))
 	return make_hbadarg(env, hp);    
     dr.dev_id = dev_id;
     dr.dev_opt = dev_opt;
@@ -1065,15 +963,16 @@ static ERL_NIF_TERM nif_set_link_mode(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     uint32_t dev_opt;
+    int i;
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i = get_dev_id(env, 3, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-1], &dev_opt))
+    if (!enif_get_uint(env, argv[i], &dev_opt))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
     dr.dev_opt = dev_opt;
@@ -1089,17 +988,18 @@ static ERL_NIF_TERM nif_set_acl_mtu(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     unsigned mtu, mpkt;
-
+    int i;
+    
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 4, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-1], &mpkt))
+    if (!enif_get_uint(env, argv[i], &mpkt))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-2], &mtu))
+    if (!enif_get_uint(env, argv[i+1], &mtu))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
     dr.dev_opt = htobl(htobs(mpkt) | (htobs(mtu) << 16));
@@ -1115,17 +1015,18 @@ static ERL_NIF_TERM nif_set_sco_mtu(ErlNifEnv* env, int argc,
     handle_t* hp;
     int dev_id;
     unsigned mtu, mpkt;
-    
+    int i;
+	
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 4, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-1], &mpkt))
+    if (!enif_get_uint(env, argv[i], &mpkt))
 	return make_hbadarg(env, hp);
-    if (!enif_get_uint(env, argv[argc-2], &mtu))
+    if (!enif_get_uint(env, argv[i+1], &mtu))
 	return make_hbadarg(env, hp);
     dr.dev_id = dev_id;
     dr.dev_opt = htobl(htobs(mpkt) | (htobs(mtu) << 16));
@@ -1178,7 +1079,8 @@ static ERL_NIF_TERM nif_unblock(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM nif_inquiry(ErlNifEnv* env, int argc,
 				const ERL_NIF_TERM argv[])
 {
-    uint8_t ibuf[sizeof(struct hci_inquiry_req)+sizeof(inquiry_info)*255];
+    size_t sz = sizeof(struct hci_inquiry_req)+sizeof(inquiry_info)*255;
+    uint8_t ibuf[sz];
     struct hci_inquiry_req* ir;
     inquiry_info* ip;
     handle_t* hp;
@@ -1187,7 +1089,7 @@ static ERL_NIF_TERM nif_inquiry(ErlNifEnv* env, int argc,
     unsigned flags;
     unsigned timeout;
     unsigned num_rsp;
-    int i;
+    int i, err, r;
     ERL_NIF_TERM list;
     
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
@@ -1197,32 +1099,35 @@ static ERL_NIF_TERM nif_inquiry(ErlNifEnv* env, int argc,
     }
     ir = (struct hci_inquiry_req*) ibuf;
     
-    if (!get_dev_id(env, argc, argv, hp, &dev_id))
+    if (!(i=get_dev_id(env, 6, argc, argv, hp, &dev_id)))
 	return make_hbadarg(env, hp);
     ir->dev_id = dev_id;
-    if (!enif_get_uint(env, argv[argc-1], &flags))
-	return make_hbadarg(env, hp);
-    ir->flags = flags;
-    if (!enif_inspect_binary(env, argv[argc-2], &lap)) {
-	if (lap.size == 0) {
-	    ir->lap[0] = 0x33;
-	    ir->lap[1] = 0x8b;
-	    ir->lap[2] = 0x9e;
-	}
-	else if (lap.size == 3)
-	    memcpy(ir->lap, lap.data, 3);
-	else
-	    return make_hbadarg(env, hp);
-    }
-    if (!enif_get_uint(env, argv[argc-3], &num_rsp))
-	return make_hbadarg(env, hp);
-    ir->num_rsp = num_rsp;
-    if (!enif_get_uint(env, argv[argc-4], &timeout))
+    if (!enif_get_uint(env, argv[i], &timeout))
 	return make_hbadarg(env, hp);
     ir->length = (timeout / 1280) + ((timeout % 1280) != 0);
-
-    if (ioctl(hp->fd, HCIINQUIRY, (void*) ir) < 0)
-	return make_herror(env, hp, errno);
+    if (!enif_get_uint(env, argv[i+1], &num_rsp))
+	return make_hbadarg(env, hp);
+    ir->num_rsp = num_rsp;
+    if (!enif_inspect_binary(env, argv[i+2], &lap))
+	return make_hbadarg(env, hp);
+    if (lap.size == 0) {
+	ir->lap[0] = 0x33;
+	ir->lap[1] = 0x8b;
+	ir->lap[2] = 0x9e;
+    }
+    else if (lap.size == 3)
+	memcpy(ir->lap, lap.data, 3);
+    else
+	return make_hbadarg(env, hp);
+    if (!enif_get_uint(env, argv[i+3], &flags))
+	return make_hbadarg(env, hp);
+    ir->flags = flags;
+    // set_nonblock(hp->fd, 0);
+    r = ioctl(hp->fd, HCIINQUIRY, (void*) ir);
+    err = errno;
+    // set_nonblock(hp->fd, 1);
+    if (r < 0)
+	return make_herror(env, hp, err);
     ip = (inquiry_info*) (((uint8_t*) ir) + sizeof(struct hci_inquiry_req));
     
     list = enif_make_list(env, 0);
@@ -1238,12 +1143,6 @@ static ERL_NIF_TERM nif_inquiry(ErlNifEnv* env, int argc,
 static ERL_NIF_TERM nif_debug(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
-    handle_t* hp;
-    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
-    case -1: return enif_make_badarg(env);
-    case 0:  return make_bad_handle(env);
-    default: break;
-    }
     return ATOM(ok);
 }
 

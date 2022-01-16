@@ -107,31 +107,31 @@ open() ->
 
 %% Close the HCI socket
 -spec close(Hci::hci_socket_t()) -> boolean().
-close(Hci) when is_port(Hci) ->
+close(Hci) ->
     erlang:port_close(Hci).
 
 %% Bind HCI socket to device
 -spec bind(Hci::hci_socket_t(), DevID::hci_devid_t()) -> ok | {error,posix()}.
 
-bind(Hci, DevID) when is_port(Hci), is_integer(DevID) ->
+bind(Hci, DevID) when is_integer(DevID) ->
     port_call(Hci, ?CMD_BIND, <<DevID:32/signed>>).
 
 %% Bring the device UP
 -spec dev_up(Hci::hci_socket_t(), DevID::hci_devid_t()) -> ok | {error,posix()}.
 
-dev_up(Hci,DevID) when is_port(Hci), is_integer(DevID) ->
+dev_up(Hci,DevID) when is_integer(DevID) ->
     port_call(Hci, ?CMD_HCIDEVUP, <<DevID:32/signed>>).
 
 %% Bring the device DOWN
 -spec dev_down(Hci::hci_socket_t(), DevID::hci_devid_t()) -> ok | {error,posix()}.
 
-dev_down(Hci,DevID) when is_port(Hci), is_integer(DevID) ->
+dev_down(Hci,DevID) when is_integer(DevID) ->
     port_call(Hci, ?CMD_HCIDEVDOWN, <<DevID:32/signed>>).
 
 %% Reset the device, maybe do down/up? as seen in library code elsewhere
 -spec dev_reset(Hci::hci_socket_t(), DevID::hci_devid_t()) -> ok | {error,posix()}.
 
-dev_reset(Hci,DevID) when is_port(Hci), is_integer(DevID) ->
+dev_reset(Hci,DevID) when is_integer(DevID) ->
     port_call(Hci, ?CMD_HCIDEVRESET, <<DevID:32/signed>>).
 
 %% Reset device statistics
@@ -181,7 +181,7 @@ get_conn_list(Hci, DevID) ->
 -spec get_conn_info(Hci::hci_socket_t(), Addr::bdaddr_t(), Type::uint8_t()) ->
 			   {ok,#hci_conn_info{}} | {error,posix()}.
 
-get_conn_info(Hci, Addr, Type) when is_port(Hci) ->
+get_conn_info(Hci, Addr, Type) ->
     case bt_util:getaddr(Addr) of
 	{ok,{A,B,C,D,E,F}} ->
 	    case port_call(Hci, ?CMD_HCIGETCONNINFO, <<F,E,D,C,B,A,Type>>) of

@@ -341,7 +341,7 @@ format_address(A) when ?is_bt_address(A) ->
 	_ ->
 	    format_address_(A, $:)
     end;
-format_address(<<F,E,D,C,B,A>>) -> %% binary is reverse format
+format_address(<<A,B,C,D,E,F>>) ->
     format_address({A,B,C,D,E,F}).
 		
 format_address_({A,B,C,D,E,F}, S) ->

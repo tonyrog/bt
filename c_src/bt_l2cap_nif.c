@@ -14,6 +14,7 @@
 
 #include "erl_nif.h"
 #include "erl_driver.h"
+#include "bt_lib.h"
 
 #define MAX_L2CAP_BUF 65536
 
@@ -200,7 +201,7 @@ static void done_handle(ErlNifEnv* env, handle_t* hp)
     DEBUGF("done_handle: access_count = %d", hp->access_count);    
     enif_mutex_lock(hp->access_mtx);
     hp->access_count--;
-    if ((hp->access_count == 0) && (hp->state == CLOSING))
+    if ((hp->access_count == 0) && (hp->state & CLOSING))
 	must_close = 1;
     enif_mutex_unlock(hp->access_mtx);
     if (must_close) {
@@ -258,116 +259,6 @@ static ERL_NIF_TERM make_ok(ErlNifEnv* env, handle_t* handle)
     return ATOM(ok);
 }
 
-// return 0 if error otherwise 1,2 or 3
-// 1 -  ...x  (last one digit)
-// 2 -  ..xy  (last two digits)
-// 2 -  x:..  (middl one digit)
-// 3 -  xy:..  (middl two digits)
-int get_hex_byte(char* ptr, char* ptr_end, int* value_ptr)
-{
-    uint8_t x = 0;
-    int c;
-
-    if (ptr >= ptr_end)
-	return 0;
-    c = *ptr++;
-    if ((c >= '0') && (c <= '9')) x = (c-'0');
-    else if ((c >= 'a') && (c <= 'f')) x = 10+(c-'a');
-    else if ((c >= 'A') && (c <= 'F')) x = 10+(c-'A');
-    else return 0;
-    if (ptr >= ptr_end) {
-	*value_ptr = x;
-	return 1;
-    }
-    c = *ptr++;
-    if ((c >= '0') && (c <= '9')) x = (x<<4) + (c-'0');
-    else if ((c >= 'a') && (c <= 'f')) x = (x<<4) + 10+(c-'a');
-    else if ((c >= 'A') && (c <= 'F')) x = (x<<4) + 10+(c-'A');
-    else if (c == ':') {
-	*value_ptr = x;
-	return 2;
-    }
-    else
-	return 0;
-    if (ptr >= ptr_end) {
-	*value_ptr = x;
-	return 2;
-    }
-    if (*ptr == ':') {
-	*value_ptr = x;
-	return 3;
-    }
-    return 0;
-}
-
-
-int get_bdaddr(ErlNifEnv* env, ERL_NIF_TERM arg, bdaddr_t* addr)
-{
-    ErlNifBinary bin;
-    const ERL_NIF_TERM* taddr;
-    int arity;
-
-    DEBUGF("get_bdaddr: %T", arg);
-    
-    if (enif_inspect_iolist_as_binary(env,arg,&bin)) {
-	if (bin.size == 6) { // assume binary address
-	    memcpy(addr->b, bin.data, bin.size);
-	    return 1;
-	}
-	else { // check for ascii encoded address
-	    char* ptr = (char*) bin.data;
-	    char* ptr_end = (char*) bin.data + bin.size;
-	    int i = 0;
-	    for (i = 0; i < 6; i++) {
-		int offs;
-		int b;
-		if ((offs = get_hex_byte(ptr, ptr_end, &b)) == 0)
-		    return 0;
-		addr->b[5-i] = b;
-		DEBUGF("b[%d] = %x", 5-i, b);
-		ptr += offs;
-	    }
-	    if (ptr == ptr_end)
-		return 1;
-	}
-	return 0;	
-    }
-    else if (enif_get_tuple(env, arg, &arity, &taddr) && (arity == 6)) {
-	int i, b;
-	for (i = 0; i < 6; i++) {
-	    if (!enif_get_int(env, taddr[i], &b))
-		return 0;
-	    addr->b[5-i] = b;
-	}
-	return 1;
-    }
-    return 0;
-}
-
-ERL_NIF_TERM make_bdaddr(ErlNifEnv* env, bdaddr_t* addr)
-{
-    return enif_make_tuple6(env,
-			    enif_make_int(env, addr->b[5]),
-			    enif_make_int(env, addr->b[4]),
-			    enif_make_int(env, addr->b[3]),
-			    enif_make_int(env, addr->b[2]),
-			    enif_make_int(env, addr->b[1]),
-			    enif_make_int(env, addr->b[0]));
-}
-
-int set_nonblock(int fd)
-{
-   int flags;
-#if defined(O_NONBLOCK)
-    if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
-        flags = 0;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-#else
-    flags = 1;
-    return ioctl(fd, FIOBIO, &flags);
-#endif
-}
-
 static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
 			     const ERL_NIF_TERM argv[])
 {
@@ -386,7 +277,7 @@ static ERL_NIF_TERM nif_open(ErlNifEnv* env, int argc,
 	return make_error(env, err);
     }
     DEBUGF("open_ hp = %p", hp);
-    if (set_nonblock(fd) < 0) {
+    if (set_nonblock(fd, 1) < 0) {
 	int err = errno;
 	close(fd);
 	return make_error(env, err);
