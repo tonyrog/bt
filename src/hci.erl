@@ -17,7 +17,7 @@
 -export([disconnect/4]).
 -export([read_remote_name/1,read_remote_name/3]).
 -export([read_local_name/0, read_local_name/2]).
--export([send/4, call/6, wait/5]).
+-export([send/4, call/5, call/6, wait/6]).
 -export([dev_class/1]).
 %% -compile(export_all).
 
@@ -25,6 +25,7 @@
 -include("../include/hci_drv.hrl").
 -include("hci_api.hrl").
 
+%% -define(debug, true).
 
 -ifdef(debug).
 -define(dbg(F), io:format((F))).
@@ -37,7 +38,7 @@
 -define(GIAC, <<16#33,16#8B,16#9E>>).  %% General Inquiry access code
 -define(LIAC, <<16#00,16#8B,16#9E>>).  %% limited Inquiry access code
 
--define(DEFAULT_TIMEOUT, 5000).
+-define(DEFAULT_TIMEOUT, 2000).
 -define(INQUIRY_TIMEOUT, 10000).
 
 -define(map_from_record(Name, Record),
@@ -268,10 +269,9 @@ create_connection(Hci, Bdaddr, Pkt_type, Clock_offset, Role_switch, Timeout) ->
     case call(Hci,?OGF_LINK_CTL,?OCF_CREATE_CONN,
 	      <<?create_conn_cp_bin(Bdaddr,Pkt_type,Pscan_rep_mode,Pscan_mode,Clock_offset,Role_switch)>>,
 	      ?EVT_CONN_COMPLETE, Timeout) of
-	{ok, <<?evt_conn_complete_bin(0,Handle,_Bdaddr,_Link_type,_Encr_mode)>>} ->
+	{ok, #evt_conn_complete{status=0,handle=Handle}} ->
 	    {ok, Handle};
-	{ok, <<?evt_conn_complete_bin(Status,_Handle,_Bdaddr,_Link_type,_Encr_mode)>>} ->
-	    %% fixme: decode status
+	{ok, #evt_conn_complete{status=Status}} -> %% fixme: decode status
 	    {error, Status};
 	Error ->
 	    Error
@@ -281,9 +281,9 @@ disconnect(Hci, Handle, Reason, Timeout) ->
     case call(Hci, ?OGF_LINK_CTL, ?OCF_DISCONNECT, 
 	      <<?disconnect_cp_bin(Handle,Reason)>>,
 	      ?EVT_DISCONN_COMPLETE, Timeout) of
-	{ok, <<?evt_disconn_complete_bin(0,Handle,Reason)>>} ->
+	{ok, #evt_disconn_complete{status=0,handle=Handle}} ->
 	    ok;
-	{ok, <<?evt_disconn_complete_bin(_Status,Handle,Reason)>>} ->
+	{ok, #evt_disconn_complete{status=_Status,handle=Handle}} ->
 	    {error,eio};
 	Error ->
 	    Error
@@ -320,9 +320,9 @@ read_remote_name_(Hci, InquiryInfo = #{ bdaddr := Bdaddr0 }, Timeout) ->
 	      <<?remote_name_req_cp_bin(Bdaddr,Pscan_rep_mode,Pscan_mode,
 					Clock_offset)>>,
 	      ?EVT_REMOTE_NAME_REQ_COMPLETE,Timeout) of
-	{ok, <<?evt_remote_name_req_complete_bin(0,_Bdaddr,Name)>>} ->
-	    {ok,hci_util:c_string(Name)};
-	{ok, <<?evt_remote_name_req_complete_bin(_Status,_Bdaddr,_Name)>>} ->
+	{ok, #evt_remote_name_req_complete { status = 0, name = Name }} ->
+	    {ok, cname(Name)};
+	{ok, #evt_remote_name_req_complete {}} ->
 	    {error, eio};
 	Error -> Error
     end.
@@ -353,7 +353,16 @@ send(Hci,Opcode,Data) ->
 send(Hci, OGF, OCF, Data) ->
     send(Hci, ?cmd_opcode_pack(OGF,OCF), Data).
 
-call(Hci,OGF,OCF,Data,Event,Timeout) ->
+call(Hci,OGF,OCF,Data,undefined) ->
+    call_(Hci,OGF,OCF,Data,0,undefined,?DEFAULT_TIMEOUT);
+call(Hci,OGF,OCF,Data,Decode) -> 
+    call_(Hci,OGF,OCF,Data,0,Decode,?DEFAULT_TIMEOUT).
+
+call(Hci,OGF,OCF,Data,Event,Timeout) when is_integer(Event), 
+					  is_integer(Timeout) ->
+    call_(Hci,OGF,OCF,Data,Event,undefined,Timeout).
+    
+call_(Hci,OGF,OCF,Data,Event,Decode,Timeout) ->
     Opcode = ?cmd_opcode_pack(OGF,OCF),
     {ok,OldFilter} = bt_hci:get_filter(Hci),
     %% ?dbg("call: saved_filter = ~p\n", [OldFilter]),
@@ -362,22 +371,23 @@ call(Hci,OGF,OCF,Data,Event,Timeout) ->
 				    [?EVT_CMD_STATUS,
 				     ?EVT_CMD_COMPLETE,
 				     ?EVT_LE_META_EVENT,
+				     %% ?EVT_REMOTE_NAME_REQ_COMPLETE,
 				     Event]),
     %% ?dbg("call: new_filter = ~p\n", [NewFilter]),
     case bt_hci:set_filter(Hci, NewFilter) of
 	ok ->
 	    {ok,_} = send(Hci,Opcode,Data),
-	    Reply = wait(Hci,Opcode,Event,10,Timeout),
+	    Reply = wait(Hci,Opcode,Event,Decode,10,Timeout),
 	    bt_hci:set_filter(Hci, OldFilter),
 	    Reply;
 	Error ->
 	    Error
     end.
 
-wait(Hci,Opcode,Event,Try,Timeout) ->
+wait(Hci,Opcode,Event,Decode,Try,Timeout) ->
     io:format("Start timer timeout=~w\n", [Timeout]),
     TRef = start_timer(Timeout),
-    Result = wait_(Hci,Opcode,Event,Try,TRef),
+    Result = wait_(Hci,Opcode,Event,Decode,Try,TRef),
     case Result of
 	timeout ->
 	    {error, timedout};
@@ -386,20 +396,20 @@ wait(Hci,Opcode,Event,Try,Timeout) ->
 	    Result
     end.
 
-wait_(_Hci,_Opcode,_Event,0,TRef) ->
+wait_(_Hci,_Opcode,_Event,_Decode,0,TRef) ->
     cancel_timer(TRef),
     {error, timedout};
 
-wait_(Hci,Opcode,Event,Try,TRef) ->
+wait_(Hci,Opcode,Event,Decode,Try,TRef) ->
     ok = bt_hci:select(Hci, read),
     receive
 	{select,Hci,undefined,ready_input} ->
-	    response_(Hci,Opcode,Event,Try,TRef);
+	    response_(Hci,Opcode,Event,Decode,Try,TRef);
 	{timeout,TRef,_} ->
 	    cancel_select(Hci, read),
 	    timeout;
 	Other ->
-	    io:format("hci:wait/5 got ~p\n", [Other]),
+	    io:format("hci:wait/6 got ~p\n", [Other]),
 	    error
     end.
 
@@ -415,7 +425,7 @@ cancel_select(Hci, Mode) ->
     end.
     
 
-response_(Hci,Opcode,Event,Try,TRef) ->
+response_(Hci,Opcode,Event,Decode,Try,TRef) ->
     case bt_hci:read(Hci) of
 	{ok, _Data0 = <<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>} ->
 	    ?dbg("Got data ~p\n", [_Data0]),
@@ -425,51 +435,66 @@ response_(Hci,Opcode,Event,Try,TRef) ->
 		    case Packet of
 			<<?evt_cmd_status_bin(0,_Ncmd,Opcode),R/binary>> ->
 			    if Evt =/= Event ->
-				    wait_(Hci,Opcode,Event,Try-1,TRef);
+				    wait_(Hci,Opcode,Decode,Event,Try-1,TRef);
 			       true ->
-				    {ok,R}
+				    reply(Decode, R)
 			    end;
 			<<?evt_cmd_status_bin(_Status,_Ncmd,Opcode),_R/binary>> ->
 			    {error, eio};  %% other status?
 			<<?evt_cmd_status_bin(_S,_Ncmd,_Opcode),_R/binary>> ->
-			    wait_(Hci,Opcode,Event,Try-1,TRef)
+			    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
 		    end;
 		?EVT_CMD_COMPLETE ->
 		    ?dbg("got cmd_complete\n", []),
 		    case Packet of
 			<<?evt_cmd_complete_bin(_Ncmd,Opcode),R/binary>> ->
-			    {ok,R};
+			    reply(Decode, R);
 			<<?evt_cmd_complete_bin(_Ncmd,_Opcode),_R/binary>> ->
-			    wait_(Hci,Opcode,Event,Try-1,TRef)
+			    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
 		    end;
 
 		?EVT_REMOTE_NAME_REQ_COMPLETE when Evt =:= Event ->
 		    ?dbg("got remote_name_req_complete\n", []),
-		    case Packet of
-			<<?evt_remote_name_req_complete_bin(_Status,_Bdaddr,_Name)>> ->
-			    %% fixme: check Bdaddr!
-			    {ok,Packet}
-		    end;
+		    {ok, hci_api:decode_evt_remote_name_req_complete(Packet)};
 		?EVT_LE_META_EVENT ->
 		    ?dbg("got evt_le_meta_event\n", []),
 		    case Packet of
 			<<?evt_le_meta_event_bin(SEvt,_D1),LePacket/binary>> ->
 			    if SEvt =:= Event ->
-				    {ok,LePacket};
+				    Le = hci_api:decode_le(SEvt, LePacket),
+				    {ok,Le};
 			       true ->
-				    wait_(Hci,Opcode,Event,Try-1,TRef)
+				    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
 			    end
 		    end;
 		_ ->
-		    ?dbg("got event ~p\n", [Evt]),
-		    {ok,Packet}
+		    try hci_api:decode(Evt,Packet) of
+			ReplyEvent ->
+			    ?dbg("decoded event\n"),
+			    {ok, ReplyEvent}
+		    catch
+			error:Reason:StackTrace ->
+			    io:format("decode error: ~p ~p\n", 
+				      [Reason, StackTrace]),
+			    {error, Reason}
+		    end
 	    end;
 	{ok, _Data0} ->
 	    ?dbg("Got data ~p\n", [_Data0]),
-            wait_(Hci,Opcode,Event,Try-1,TRef);
+            wait_(Hci,Opcode,Event,Decode,Try-1,TRef);
         Error = {error,_} ->
             Error
     end.
+
+reply(undefined, Data) ->
+    {ok,Data};
+reply(Decode, Data) ->
+    {ok, Decode(Data)}.
+
+cname(<<0,_/binary>>) -> [];
+cname(<<C,Cs/binary>>) -> [C|cname(Cs)];
+cname(<<>>) -> [].
+
 
 start_timer(0) -> undefined;
 start_timer(Timeout) -> erlang:start_timer(Timeout, self(), timeout).
