@@ -92,7 +92,7 @@ format_hci_dev_info(#hci_dev_info {
       "\t~s\n"
       "~s\n",
       [Name, Type1, Bus,
-       bt:format_address(BdAddr),
+       bt_util:format_address(BdAddr),
        Acl_mtu, Acl_pkts, Sco_mtu, Sco_pkts,
        format_bits(Flags, kv_hci_dev_info_flags()),
        format_hci_dev_stats(S)]).
@@ -118,7 +118,7 @@ bdaddr({A,B,C,D,E,F}) ->
     {ok,<<F,E,D,C,B,A>>};
 bdaddr(Bin = <<_,_,_,_,_,_>>) -> {ok,Bin};  %% assume binary format is internal!
 bdaddr(Addr) when is_list(Addr) ->
-    case bt:getaddr(Addr) of
+    case bt_util:getaddr(Addr) of
 	{ok,{A,B,C,D,E,F}} ->
 	    {ok,<<F,E,D,C,B,A>>};
 	Error ->

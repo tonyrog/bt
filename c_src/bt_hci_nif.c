@@ -19,8 +19,8 @@
 #include "erl_driver.h"
 #include "bt_lib.h"
 
-#define DEBUG
-#define NIF_TRACE
+// #define DEBUG
+// #define NIF_TRACE
 
 #define UNUSED(a) ((void) a)
 
@@ -137,6 +137,7 @@ typedef struct _handle_t {
     int           dev_id;    // bound dev_id
     size_t        buf_len;
     char*         buf;
+    int           sel_mask;       // last select op ERL_NIF_SELECT_ READ|WRITE
     ErlDrvMonitor mon;       // monitor when selecting
 } handle_t;
 
@@ -192,12 +193,32 @@ static void* realloc_buffer(handle_t* hp, size_t len)
     return hp->buf;
 }
 
+static void print_state(handle_t* hp)
+{
+    if (hp->state & OPEN) enif_fprintf(stderr, "|OPEN");
+    if (hp->state & CLOSING) enif_fprintf(stderr, "|CLOSING");
+    if (hp->state & MONITOR) enif_fprintf(stderr, "|MONITOR");
+
+    if (hp->state & BOUND) enif_fprintf(stderr, "|BOUND");
+    if (hp->state & LISTEN) enif_fprintf(stderr, "|LISTEN");
+    if (hp->state & SCANNING) enif_fprintf(stderr, "|SCANNING");
+    if (hp->sel_mask & ERL_NIF_SELECT_READ)
+	enif_fprintf(stderr, "|READ");
+    if (hp->sel_mask & ERL_NIF_SELECT_WRITE)
+	enif_fprintf(stderr, "|WRITE");
+    if (hp->sel_mask & ERL_NIF_SELECT_ERROR)
+	enif_fprintf(stderr, "|ERROR");
+}
 
 static void dtor(ErlNifEnv* env, handle_t* hp)
 {
     UNUSED(env);
 
-    DEBUGF("dtor: hp=%p fd=%d, state=0x%x", hp, hp->fd, hp->state);
+    DEBUGF("dtor: hp=%p fd=%d, state=", hp, hp->fd);
+#ifdef DEBUG
+    print_state(hp);
+    enif_fprintf(stderr, "\n");
+#endif
     if (hp->fd >= 0) {
 	close(hp->fd);
 	hp->fd = -1;
@@ -211,7 +232,11 @@ static void stop(ErlNifEnv* env, handle_t* hp,
 {
     UNUSED(env);
     UNUSED(is_direct_call);
-    DEBUGF("stop: hp=%p, fd=%d", hp, (intptr_t)event);
+    DEBUGF("stop: hp=%p, fd=%d, state=", hp, (intptr_t)event);
+#ifdef DEBUG
+    print_state(hp);
+    enif_fprintf(stderr, "\n");
+#endif
     if ((hp->fd >= 0) && (hp->fd == (intptr_t)event)) {
 	close(hp->fd);
 	hp->fd = -1;
@@ -226,11 +251,18 @@ static void down(ErlNifEnv* env, handle_t* hp,
     UNUSED(pid);
     UNUSED(mon);
     UNUSED(hp);
-    DEBUGF("down: hp=%p, fd=%d", hp, (intptr_t)hp->fd);
-    if (hp->state & MONITOR) {
-	hp->state &= ~MONITOR;
-	// cancel select?
+    int mask;
+    
+    DEBUGF("down: hp=%p, fd=%d, state=", hp, (intptr_t)hp->fd);
+#ifdef DEBUG
+    print_state(hp);
+    enif_fprintf(stderr, "\n");
+#endif
+    if ((mask = hp->sel_mask)) {
+	mask |= ERL_NIF_SELECT_CANCEL;
+	enif_select(env, (ErlNifEvent)hp->fd,mask,hp,pid,ATOM(undefined));
     }
+    hp->state &= ~MONITOR;
 }
 
 static int get_handle(ErlNifEnv* env, ERL_NIF_TERM arg,handle_t** handle_ptr,
@@ -522,6 +554,7 @@ static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
     struct sockaddr_hci a;
     int dev_id;
 
+    memset(&a, 0, sizeof(a));
     if (!enif_get_int(env, argv[1], &dev_id))
 	enif_make_badarg(env);
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
@@ -1220,10 +1253,12 @@ static ERL_NIF_TERM nif_select(ErlNifEnv* env, int argc,
 	if (hp->state & MONITOR)
 	    enif_demonitor_process(env, hp, &hp->mon);
 	hp->state &= ~MONITOR;
+	hp->sel_mask = 0;  // too early?	
     }
     else {
 	if (!enif_monitor_process(env, hp, &pid, &hp->mon))
 	    hp->state |= MONITOR;
+	hp->sel_mask = mask;
     }
     res = enif_select(env, (ErlNifEvent)hp->fd,mask,hp,&pid,ATOM(undefined));
     done_handle(env, hp);

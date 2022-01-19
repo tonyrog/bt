@@ -804,117 +804,9 @@ uuid_128(UUID) when ?is_uuid(UUID) ->  UUID.
 uuid_to_string(UUID) ->
     case uuid_128(UUID) of
 	UUID128 = ?BT_UUID16(UUID16) ->
-	    case <<UUID16:16>> of
-		%% PROTOCOLS
-		?UUID_SDP -> "SDP";
-		?UUID_UDP -> "UDP";
-		?UUID_RFCOMM -> "RFCOMM";
-		?UUID_TCP -> "TCP";
-		?UUID_TCS_BIN -> "TCS_BIN";
-		?UUID_TCS_AT -> "TCS_AT";
-		?UUID_OBEX -> "OBEX";
-		?UUID_IP -> "IP";
-		?UUID_FTP -> "FTP";
-		?UUID_HTTP -> "HTTP";
-		?UUID_WSP -> "WSP";
-		?UUID_BNEP -> "BNEP";
-		?UUID_UPNP -> "UPNP";
-		?UUID_HIDP -> "HIDP";
-		?UUID_HCRP_CTRL -> "HCRP_CTRL";
-		?UUID_HCRP_DATA -> "HCRP_DATA";
-		?UUID_HCRP_NOTE -> "HRCP_NOTE";
-		?UUID_AVCTP -> "AVCTP";
-		?UUID_AVDTP -> "AVDTP";
-		?UUID_CMPT -> "CMPT";
-		?UUID_UDI -> "UDI";
-		?UUID_MCAP_CTRL -> "MCAP_CTRL";
-		?UUID_MCAP_DATA -> "MCAP_DATA";
-		?UUID_L2CAP -> "L2CAP";
-
-		%% SERVICE Classes
-		?UUID_ServiceDiscoveryServer -> "ServiceDiscoveryServer";
-		?UUID_BrowseGroupDescriptor -> "BrowseGroupDescriptor";
-		?UUID_PublicBrowseGroup -> "PublicBrowseGroup";
-		?UUID_SerialPort -> "SerialPort";
-		?UUID_LANAccessUsingPPP -> "LANAccessUsingPPP";
-		?UUID_DialupNetworking -> "DialupNetworking";
-		?UUID_IrMCSync -> "IrMCSync";
-		?UUID_OBEXObjectPush -> "OBEXObjectPush";
-		?UUID_OBEXFileTransfer -> "OBEXFileTransfer";
-		?UUID_IrMCSyncCommand -> "IrMCSyncCommand";
-		?UUID_Headset -> "Headset";
-		?UUID_CordlessTelephony -> "CordlessTelephony";
-		?UUID_AudioSource -> "AudioSource";
-		?UUID_AudioSink -> "AudioSink";
-		?UUID_AVRemoteControlTarget -> "AVRemoteControlTarget";
-		?UUID_AdvancedAudioDistribution -> "AdvancedAudioDistribution";
-		?UUID_AVRemoteControl -> "AVRemoteControl";
-		?UUID_VideoConferencing -> "VideoConferencing";
-		?UUID_Intercom -> "Intercom";
-		?UUID_Fax -> "Fax";
-		?UUID_HeadsetAudioGateway -> "HeadsetAudioGateway";
-		?UUID_WAP -> "WAP";
-		?UUID_WAPClient -> "WAPClient";
-		?UUID_PANU -> "PANU";
-		?UUID_NAP -> "NAP";
-		?UUID_GN -> "GN";
-		?UUID_DirectPrinting -> "DirectPrinting";
-		?UUID_ReferencePrinting -> "ReferencePrinting";
-		?UUID_Imaging -> "Imaging";
-		?UUID_ImagingResponder -> "ImagingResponder";
-		?UUID_ImagingAutomaticArchive -> "ImagingAutomaticArchive";
-		?UUID_ImagingReferencedObjects -> "ImagingReferencedObjects";
-		?UUID_Handsfree -> "Handsfree";
-		?UUID_HandsfreeAudioGateway -> "HandsfreeAudioGateway";
-		?UUID_DirectPrintingReferenceObjectsService -> "DirectPrintingReferenceObjectsService";
-		?UUID_ReflectedUI -> "ReflectedUI";
-		?UUID_BasicPrinting -> "BasicPrinting";
-		?UUID_PrintingStatus -> "PrintingStatus";
-		?UUID_HumanInterfaceDeviceService -> "HumanInterfaceDeviceService";
-		?UUID_HardcopyCableReplacement -> "HardcopyCableReplacement";
-		?UUID_HCR_Print -> "HCR_Print";
-		?UUID_HCR_Scan -> "HCR_Scan";
-		?UUID_CommonISDNAccess -> "CommonISDNAccess";
-		?UUID_VideoConferencingGW -> "VideoConferencingGW";
-		?UUID_UDI_MT -> "UDI_MT";
-		?UUID_UDI_TA -> "UDI_TA";
-		?UUID_Audio_Video -> "Audio/Video";
-		?UUID_SIM_Access -> "SIM_Access";
-		?UUID_PhonebookAccess_PCE -> "PhonebookAccess-PCE";
-		?UUID_PhonebookAccess_PSE -> "PhonebookAccess-PSE";
-
-		?UUID_PhonebookAccess -> "PhonebookAccessProfile";
-		?UUID_Headset_HS -> "Headset Profile";
-		?UUID_Message_Access_Server -> "MessageAccessProfile";
-		?UUID_Message_Notification_Server -> "MessageNotificationServer";
-		?UUID_Message_Access_Profile -> "MessageAccessProfile";
-		?UUID_GNSS -> "GNSSProfile";
-		?UUID_GNSS_Server -> "GNSSSever";
-		?UUID_3D_Display -> "3D-Display";
-		?UUID_3D_Glasses -> "3D-Glasses";
-		?UUID_3D_Synchronization -> "3D-Synchronization";
-		?UUID_MPS_Profile -> "MPS";
-		?UUID_MPS_SC -> "MPS-SC";
-		?UUID_CTN_Access_Service -> "CTNAccessService";
-		?UUID_CTN_Notification_Service ->"CTNNotificationService";
-		?UUID_CTN_Profile -> "CTNProfile";
-		?UUID_PnPInformation -> "PnPInformation";
-		?UUID_GenericNetworking -> "GenericNetworking";
-		?UUID_GenericFileTransfer -> "GenericFileTransfer";
-		?UUID_GenericAudio -> "GenericAudio";
-		?UUID_GenericTelephony -> "GenericTelephony";
-		?UUID_UPNP_Service -> "UPNP_Service";
-		?UUID_UPNP_IP_Service -> "UPNP_IP_Service";
-		?UUID_ESDP_UPNP_IP_PAN -> "ESDP_UPNP_IP_PAN";
-		?UUID_ESDP_UPNP_IP_LAP -> "ESDP_UPNP_IP_LAP";
-		?UUID_ESDP_UPNP_L2CAP -> "ESDP_UPNP_L2CAP";
-		?UUID_VideoSource -> "VideoSource";
-		?UUID_VideoSink -> "VideoSink";
-		?UUID_VideoDistribution -> "VideoDistribution";
-		?UUID_HDP -> "HDP";
-		?UUID_HDP_Source -> "HDP-Source";
-		?UUID_HDP_Sink ->  "HDP-Sink";
-		_ -> bt_util:uuid_to_string(UUID128)
+	    case bt_uuid16:to_string(UUID16) of
+		undefined -> bt_util:uuid_to_string(UUID128);
+		String -> String
 	    end;
 	?UUID_SyncMLServer   -> "SyncMLServer";
 	?UUID_SyncMLClient   -> "SyncMLClient";
@@ -925,115 +817,29 @@ uuid_to_string(UUID) ->
 	UUID128 -> bt_util:uuid_to_string(UUID128)
     end.
 
-	     
-
 %% Try convert symboic name into UUID
 string_to_uuid(Name) when is_list(Name) ->
-    case tolower(Name) of
-	%% PROTOCOLS
-	"sdp" -> ?UUID_SDP;
-	"udp" -> ?UUID_UDP;
-	"rfcomm" -> ?UUID_RFCOMM;
-	"tcp" -> ?UUID_TCP;
-	"tcs_bin" -> ?UUID_TCS_BIN;
-	"tcs_at" -> ?UUID_TCS_AT;
-	"obex" -> ?UUID_OBEX;
-	"ip" -> ?UUID_IP;
-	"ftp" -> ?UUID_FTP;
-	"http" -> ?UUID_HTTP;
-	"wsp" -> ?UUID_WSP;
-	"bnep" -> ?UUID_BNEP;
-	"upnp" -> ?UUID_UPNP;
-	"hidp" -> ?UUID_HIDP;
-	"hardcopycontrolchannel" -> ?UUID_HCRP_CTRL;
-	"hardcopydatachannel"    -> ?UUID_HCRP_DATA;
-	"hardcopynotification"   -> ?UUID_HCRP_NOTE;
-	"avctp" -> ?UUID_AVCTP;
-	"avdtp" -> ?UUID_AVDTP;
-	"cmpt" -> ?UUID_CMPT;
-	"udi" -> ?UUID_UDI;
-	"l2cap" -> ?UUID_L2CAP;
-		%% SERVICE Classes
-	"servicediscoveryserver" -> ?UUID_ServiceDiscoveryServer;
-	"browsegroupdescriptor" -> ?UUID_BrowseGroupDescriptor;
-	"publicbrowsegroup" -> ?UUID_PublicBrowseGroup;
-	"serialport" -> ?UUID_SerialPort;
-	"lanaccessusingppp" -> ?UUID_LANAccessUsingPPP;
-	"dialupnetworking" -> ?UUID_DialupNetworking;
-	"irmcsync" -> ?UUID_IrMCSync;
-	"obexobjectpush" -> ?UUID_OBEXObjectPush;
-	"obexfiletransfer" -> ?UUID_OBEXFileTransfer;
-	"irmcsynccommand" -> ?UUID_IrMCSyncCommand;
-	"headset" -> ?UUID_Headset;
-	"cordlesstelephony" -> ?UUID_CordlessTelephony;
-	"audiosource" -> ?UUID_AudioSource;
-	"audiosink" -> ?UUID_AudioSink;
-	"avremotecontroltarget" -> ?UUID_AVRemoteControlTarget;
-	"advancedaudiodistribution" -> ?UUID_AdvancedAudioDistribution;
-	"avremotecontrol" -> ?UUID_AVRemoteControl;
-	"videoconferencing" -> ?UUID_VideoConferencing;
-	"intercom" -> ?UUID_Intercom;
-	"fax" -> ?UUID_Fax;
-	"headsetaudiogateway" -> ?UUID_HeadsetAudioGateway;
-	"wap" -> ?UUID_WAP;
-	"wapclient" -> ?UUID_WAPClient;
-	"panu" -> ?UUID_PANU;
-	"nap" -> ?UUID_NAP;
-	"gn" -> ?UUID_GN;
-	"directprinting" -> ?UUID_DirectPrinting;
-	"referenceprinting" -> ?UUID_ReferencePrinting;
-	"imaging" -> ?UUID_Imaging;
-	"imagingresponder" -> ?UUID_ImagingResponder;
-	"imagingautomaticarchive" -> ?UUID_ImagingAutomaticArchive;
-	"imagingreferencedobjects" -> ?UUID_ImagingReferencedObjects;
-	"handsfree" -> ?UUID_Handsfree;
-	"handsfreeaudiogateway" -> ?UUID_HandsfreeAudioGateway;
-	"directprintingreferenceobjectsservice" -> ?UUID_DirectPrintingReferenceObjectsService;
-	"reflectedui" -> ?UUID_ReflectedUI;
-	"basicprinting" -> ?UUID_BasicPrinting;
-	"printingstatus" -> ?UUID_PrintingStatus;
-	"humaninterfacedeviceservice" -> ?UUID_HumanInterfaceDeviceService;
-	"hardcopycablereplacement" -> ?UUID_HardcopyCableReplacement;
-	"hcr_print" -> ?UUID_HCR_Print;
-	"hcr_scan" -> ?UUID_HCR_Scan;
-	"commonisdnaccess" -> ?UUID_CommonISDNAccess;
-	"videoconferencinggw" -> ?UUID_VideoConferencingGW;
-	"udi_mt" -> ?UUID_UDI_MT;
-	"udi_ta" -> ?UUID_UDI_TA;
-	"audio/video" -> ?UUID_Audio_Video;
-	"sim_access" -> ?UUID_SIM_Access;
-	"phonebookaccess-pce" -> ?UUID_PhonebookAccess_PCE;
-	"phonebookaccess-pse" -> ?UUID_PhonebookAccess_PSE;
-	"pnpinformation" -> ?UUID_PnPInformation;
-	"genericnetworking" -> ?UUID_GenericNetworking;
-	"genericfiletransfer" -> ?UUID_GenericFileTransfer;
-	"genericaudio" -> ?UUID_GenericAudio;
-	"generictelephony" -> ?UUID_GenericTelephony;
-	"upnp_service" -> ?UUID_UPNP_Service;
-	"upnp_ip_service" -> ?UUID_UPNP_IP_Service;
-	"esdp_upnp_ip_pan" -> ?UUID_ESDP_UPNP_IP_PAN;
-	"esdp_upnp_ip_lap" -> ?UUID_ESDP_UPNP_IP_LAP;
-	"esdp_upnp_l2cap" -> ?UUID_ESDP_UPNP_L2CAP;
-	"videosource" -> ?UUID_VideoSource;
-	"videosink" -> ?UUID_VideoSink;
-	"videodistribution" -> ?UUID_VideoDistribution;
-
-	%% SyncML
-	"syncmlserver" -> ?UUID_SyncMLServer;
-	"syncmlclient" -> ?UUID_SyncMLClient;
-	"syncmldmserver" -> ?UUID_SyncMLDMServer;
-	"syncmldmclient" -> ?UUID_SyncMLDMClient;
-	_ -> bt_util:string_to_uuid(Name)
+    case bt_uuid16:from_string(Name) of
+	undefined ->
+	    case string:to_lower(Name) of
+		%% SyncML		
+		"syncmlserver" -> ?UUID_SyncMLServer;
+		"syncmlclient" -> ?UUID_SyncMLClient;
+		"syncmldmserver" -> ?UUID_SyncMLDMServer;
+		"syncmldmclient" -> ?UUID_SyncMLDMClient;
+		_ -> bt_util:string_to_uuid(Name)
+	    end;
+	UUID16 ->
+	    ?BT_UUID16(UUID16)
     end;
 string_to_uuid(Name) when is_atom(Name) ->
     string_to_uuid(atom_to_list(Name)).
-
 
 string_to_attribute(Name) ->
     string_to_attribute(Name, 16#0100).
 
 string_to_attribute(Name,LanguageBase) when is_list(Name) ->
-    case tolower(Name) of
+    case string:to_lower(Name) of
 	"servicerecordhandle"    -> ?ATTR_ServiceRecordHandle;
 	"serviceclassidlist"     -> ?ATTR_ServiceClassIDList;
 	"servicerecordstate"     -> ?ATTR_ServiceRecordState;
@@ -1178,10 +984,3 @@ attr16_pn(ID) ->  attr16_id(ID).
 %% convert to 0xABCD format
 attr16_id(ID) ->
     "0x"++tl(integer_to_list((ID band 16#ffff) bor 16#10000, 16)).
-
-tolower([H|T]) when H>=$A, H=<$Z ->
-    [(H-$A)+$a | tolower(T)];
-tolower([H|T]) ->
-    [H|tolower(T)];
-tolower([]) ->
-    [].

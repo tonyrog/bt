@@ -101,6 +101,7 @@ typedef struct _handle_t {
     struct sockaddr_sco addr;      // peer address/connect/accept
     hstate_t      state;
     int           fd;
+    int           sel_mask;       // last select op ERL_NIF_SELECT_ READ|WRITE  
     ErlDrvMonitor mon;             // monitor when selecting    
 } handle_t;
 
@@ -170,7 +171,15 @@ static void down(ErlNifEnv* env, handle_t* hp,
     UNUSED(pid);
     UNUSED(mon);
     UNUSED(hp);
+    int mask;
+    
     DEBUGF("down: hp=%p, fd=%d", hp, (intptr_t)hp->fd);
+    // when process with "the" monitor dies try cancel the select op
+    if ((mask = hp->sel_mask)) {
+	mask |= ERL_NIF_SELECT_CANCEL;
+	enif_select(env, (ErlNifEvent)hp->fd,mask,hp,pid,ATOM(undefined));
+    }
+    hp->state &= ~MONITOR;    
 }
 
 static int get_handle(ErlNifEnv* env, ERL_NIF_TERM arg,handle_t** handle_ptr,
@@ -409,7 +418,7 @@ static ERL_NIF_TERM nif_accept(ErlNifEnv* env, int argc,
     memset(hp1, 0, sizeof(handle_t));
     hp1->access_mtx = enif_mutex_create("sco_access");
     hp1->fd = fd;
-    hp1->state |= CONNECTED;
+    hp1->state |= (OPEN|BOUND|CONNECTED);
     hp1->addr = hp->addr;
     ht = enif_make_resource(env, hp1);
     enif_release_resource(hp1);
@@ -470,7 +479,7 @@ static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
     socklen_t len;
     ERL_NIF_TERM bdaddr;
 
-    switch(get_handle(env, argv[0], &hp, CONNECTED|CONNECTING, 0)) {
+    switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
@@ -480,7 +489,8 @@ static ERL_NIF_TERM nif_getpeername(ErlNifEnv* env, int argc,
     len = sizeof(addr);
     if (getpeername(hp->fd, (struct sockaddr *) &addr, &len) < 0)
 	return make_herror(env, hp, errno);
-    hp->state = (hp->state & ~CONNECTING) | CONNECTED;     // FIXME
+    if (hp->state & CONNECTING) // FIXME??    
+	hp->state = (hp->state & ~CONNECTING) | CONNECTED;
     bdaddr = make_bdaddr(env, &addr.sco_bdaddr);
     return make_result(env, hp, bdaddr);
 }
@@ -578,14 +588,16 @@ static ERL_NIF_TERM nif_select(ErlNifEnv* env, int argc,
 	if (hp->state & MONITOR)
 	    enif_demonitor_process(env, hp, &hp->mon);
 	hp->state &= ~MONITOR;
+	hp->sel_mask = 0;  // too early?
     }
     else {
 	if (!enif_monitor_process(env, hp, &pid, &hp->mon))
 	    hp->state |= MONITOR;
+	hp->sel_mask = mask;
     }
     res = enif_select(env, (ErlNifEvent)hp->fd,mask,hp,&pid,ATOM(undefined));
     done_handle(env, hp);
-    return make_select_result(env, mask, res);    
+    return make_select_result(env, mask, res);
 }
 
 

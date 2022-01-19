@@ -46,9 +46,12 @@ connect(AdapterAddress, LocalChannel, Address, Channel, Timeout) ->
 		    TRef = start_timer(Timeout),
 		    Result = async_connect(RFCOMM, Address, Channel, TRef),
 		    cancel_timer(TRef),
-		    Result;
-
+		    case Result of
+			{error,_} -> close(RFCOMM), Result;
+			_ -> Result
+		    end;
 		Error ->
+		    close(RFCOMM),
 		    Error
 	    end;
 	Error -> Error
@@ -66,7 +69,6 @@ async_connect(RFCOMM, Address, Channel, TRef) ->
 				{ok, _} ->
 				    {ok, RFCOMM};
 				Error ->
-				    bt_rfcomm:close(RFCOMM),
 				    Error
 			    end;
 			{timeout,TRef,_} ->
@@ -76,8 +78,10 @@ async_connect(RFCOMM, Address, Channel, TRef) ->
 		Error ->
 		    Error
 	    end;
-	ok -> {ok, RFCOMM};
-	Error -> Error
+	ok -> 
+	    {ok, RFCOMM};
+	Error ->
+	    Error
     end.
 
 close(RFComm) ->
@@ -144,7 +148,7 @@ listen(AdapterAddr, Channel) ->
 		    case bt_rfcomm:listen_(RFCOMM) of
 			ok -> {ok,RFCOMM};
 			Error -> 
-			    bt_rfcomm:close(RFCOMM),
+			    close(RFCOMM),
 			    Error
 		    end;
 		Error -> Error

@@ -46,8 +46,12 @@ connect(AdapterAddress, LocalPsm, Address, Psm, Timeout) ->
 		    TRef = start_timer(Timeout),
 		    Result = async_connect(L2CAP, Address, Psm, TRef),
 		    cancel_timer(TRef),
-		    Result;
+		    case Result of
+			{error,_} -> close(L2CAP), Result;
+			_ -> Result
+		    end;
 		Error ->
+		    close(L2CAP),
 		    Error
 	    end;
 	Error -> Error
@@ -65,7 +69,6 @@ async_connect(L2CAP, Address, Psm, TRef) ->
 				{ok, _} ->
 				    {ok, L2CAP};
 				Error ->
-				    bt_l2cap:close(L2CAP),
 				    Error
 			    end;
 			{timeout,TRef,_} ->
@@ -76,7 +79,8 @@ async_connect(L2CAP, Address, Psm, TRef) ->
 		    Error
 	    end;
 	ok -> {ok, L2CAP};
-	Error -> Error
+	Error ->
+	    Error
     end.
 
 close(L2CAP) ->

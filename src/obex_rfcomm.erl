@@ -31,7 +31,7 @@
 -export([server_accept/3]).
 -export([register/3, unregister/2, lookup/2]).
 
--export([connect/3, close/1, listen/2, accept/1, send/2]).
+-export([open/3, close/1, listen/2, accept/1, send/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -56,7 +56,7 @@
 %% API
 %%====================================================================
 
-connect(Address, Channel, _Opts) ->
+open(Address, Channel, _Opts) ->
     rfcomm:connect(Address, Channel).
 
 listen(Channel, _Opts) ->

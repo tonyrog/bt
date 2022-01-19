@@ -28,7 +28,6 @@
 -export([debug/0, debug/1]).
 -export([scan/1, scan/3]).
 -export([getaddr/1, getaddr_by_name/1]).
--export([format_address/1]).
 -export([service_info/1, service_info/2]).
 -export([rfcomm_channel/2]).
 -export([decode_service/1]).
@@ -73,9 +72,9 @@ i(BtAddr) ->
     {ok,A} = getaddr(BtAddr),
     case bt_drv:device_info(A, [inquiry,update]) of
 	{ok, [{inquiry,?never},{update,_}]} ->
-	    io:format("Address: ~s\n", [format_address(A)]);
+	    io:format("Address: ~s\n", [bt_util:format_address(A)]);
 	{ok, [{inquiry,_InQuiry},{update,Update}]}->
-	    io:format("Address: ~s\n", [format_address(A)]),
+	    io:format("Address: ~s\n", [bt_util:format_address(A)]),
 	    {ok,DevInfo} = bt_drv:device_info(A,[name,
 						 is_paired,
 						 is_favorite,
@@ -127,7 +126,7 @@ li() ->
 		       ({name,Name}) ->
 			    io:format("  name: ~s\n", [Name]);
 		       ({address,Addr}) ->
-			    io:format("  addr: ~s\n", [format_address(Addr)]);
+			    io:format("  addr: ~s\n", [bt_util:format_address(Addr)]);
 		       ({What,Value}) ->
 			    io:format("  ~p: ~p\n", [What,Value])
 		    end, Info);
@@ -330,26 +329,3 @@ scan_loop(Ref, Fun, Acc) ->
 	    bt_drv:inquiry_stop(Ref),
 	    {ok,Acc}
     end.
-
-%%
-%% Format bluetooth address into a hex string
-%%
-format_address(A) when ?is_bt_address(A) ->
-    case os:type() of
-	{unix,darwin} ->
-	    format_address_(A, $-);
-	_ ->
-	    format_address_(A, $:)
-    end;
-format_address(<<A,B,C,D,E,F>>) ->
-    format_address({A,B,C,D,E,F}).
-		
-format_address_({A,B,C,D,E,F}, S) ->
-    [hexh(A),hexl(A),S,hexh(B),hexl(B),S,hexh(C),hexl(C),S,
-     hexh(D),hexl(D),S,hexh(E),hexl(E),S,hexh(F),hexl(F)].
-
-hexl(A) -> hex1(A band 16#f).
-hexh(A) -> hex1((A bsr 4) band 16#f).
-
-hex1(A) when A < 10 -> A+$0;
-hex1(A) -> (A-10)+$a.

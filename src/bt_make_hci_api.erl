@@ -147,7 +147,7 @@ write_send(Erl,OGF,OCF,Defs) ->
 	false ->
 	    io:format(Erl, "send_~s(Socket) ->\n",
 		      [FuncName]),
-	    io:format(Erl, "  hci_socket:send(Socket,?~s,?~s,<<>>).\n\n",
+	    io:format(Erl, "  hci:send(Socket,?~s,?~s,<<>>).\n\n",
 		      [OGF,OCF]);
 	{struct,Cp,Fields} ->
 	    FieldNames = field_names(Fields),
@@ -157,7 +157,7 @@ write_send(Erl,OGF,OCF,Defs) ->
 		      "send_~s(Socket,~s) ->\n",
 		      [FuncName, join(MacroArgs,",")]),
 	    io:format(Erl,
-		      "  hci_socket:send(Socket,?~s,?~s,<<?~s_bin(~s)>>).\n\n",
+		      "  hci:send(Socket,?~s,?~s,<<?~s_bin(~s)>>).\n\n",
 		      [OGF,OCF,Cp,join(MacroArgs,",")])
     end.
 
@@ -182,7 +182,7 @@ write_call(Erl,OGF,OCF,Defs) ->
 	false ->
 	    io:format(Erl, "~s(Socket) ->\n",
 		      [FuncName]),
-	    io:format(Erl, "  hci_socket:call(Socket,?~s,?~s,<<>>,~s).\n\n",
+	    io:format(Erl, "  hci:call(Socket,?~s,?~s,<<>>,~s).\n\n",
 		      [OGF,OCF,Decoder]);
 	{struct,Cp,Fields} ->
 	    FieldNames = field_names(Fields),
@@ -192,7 +192,7 @@ write_call(Erl,OGF,OCF,Defs) ->
 		      "~s(Socket,~s) ->\n",
 		      [FuncName, join(MacroArgs,",")]),
 	    io:format(Erl,
-		      "  hci_socket:call(Socket,?~s,?~s,<<?~s_bin(~s)>>,~s).\n\n",
+		      "  hci:call(Socket,?~s,?~s,<<?~s_bin(~s)>>,~s).\n\n",
 		      [OGF,OCF,Cp,join(MacroArgs,","),Decoder])
     end.
 

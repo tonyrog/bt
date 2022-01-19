@@ -163,11 +163,11 @@ scan() ->
 
 scan(Timeout) when is_integer(Timeout) ->
     scan(default, Timeout);
-scan(Name) when is_list(Name) ->
-    scan(Name, ?INQUIRY_TIMEOUT).
+scan(HciName) when is_list(HciName) ->
+    scan(HciName, ?INQUIRY_TIMEOUT).
 
-scan(Name, Timeout) ->
-    case open(Name) of
+scan(HciName, Timeout) ->
+    case open(HciName) of
 	{ok,Hci} ->
 	    case bt_hci:inquiry(Hci, Timeout, 10, ?GIAC, 0) of
 		{ok,Is} ->
@@ -175,12 +175,13 @@ scan(Name, Timeout) ->
 		      fun(I,Acc) ->
 			      Info = ?map_from_record(inquiry_info, I),
 			      Addr = maps:get(bdaddr, Info),
-			      AddrStr = bt:format_address(Addr),
+			      AddrStr = bt_util:format_address(Addr),
 			      io:format("~s: ~p\n", [AddrStr, Info]),
 			      case read_remote_name(Hci, Info, ?DEFAULT_TIMEOUT) of
-				  {ok,Name} ->
-				      io:format("~s : ~s\n", [Name, AddrStr]),
-				      [Info#{ name => Name } | Acc];
+				  {ok,RemoteName} ->
+				      io:format("~s : ~s\n", 
+						[RemoteName, AddrStr]),
+				      [Info#{ name => RemoteName } | Acc];
 				  _Error ->
 				      io:format("warning: unable to read name for device ~s\n", [AddrStr]),
 				      [Info|Acc]
@@ -260,7 +261,6 @@ dev_class(_DevClass = <<A0,A1,A2>>) ->
 	_ -> []
      end,
      elem(Major, major, majors())}.
-
 
 create_connection(Hci, Bdaddr, Pkt_type, Clock_offset, Role_switch, Timeout) ->
     Pscan_rep_mode = 16#02,
