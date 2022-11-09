@@ -259,4 +259,94 @@
 	  attributeList
 	 }).
 
+%% external / internal representation
+
+-type sdp_nil() :: 'nil'.
+
+-record(int, { value = 0 }).
+-type sdp_int() :: #int{}.
+
+-record(int8, { value = 0 }).
+-type sdp_int8() :: #int8{}.
+
+-record(int16, { value = 0 }).
+-type sdp_int16() :: #int16{}.
+
+-record(int32, { value = 0 }).
+-type sdp_int32() :: #int32{}.
+
+-record(int64, { value = 0 }).
+-type sdp_int64() :: #int64{}.
+
+-record(int128, { value = 0 }).
+-type sdp_int128() :: #int128{}.
+
+-record(uint, { value = 0 }).
+-type sdp_uint() :: #uint{}.
+
+-record(uint8, { value = 0 }).
+-type sdp_uint8() :: #uint8{}.
+
+-record(uint16, { value = 0 }).
+-type sdp_uint16() :: #uint16{}.
+
+-record(uint32, { value = 0 }).
+-type sdp_uint32() :: #uint32{}.
+
+-record(uint64, { value = 0 }).
+-type sdp_uint64() :: #uint64{}.
+
+-record(uint128, { value = 0 }).
+-type sdp_uint128() :: #uint128{}.
+
+-type sdp_signed() :: sdp_int() | sdp_int8() | sdp_int16() |
+		      sdp_int32() | sdp_int64() | sdp_int128().
+-type sdp_unsigned() :: sdp_uint() | sdp_uint8() | sdp_uint16() |
+			sdp_uint32() | sdp_uint64() | sdp_uint128().
+-type sdp_integer() :: sdp_signed() | sdp_unsigned().
+
+-record(uuid, { value :: <<_:128>> | <<_:32>> | <<_:16>> }).
+-type sdp_uuid() :: #uuid{}.
+
+-record(text, { value = "" :: string() | binary() }).
+-type sdp_text() :: #text{}.
+
+-record(hex, { value = "" :: string() | binary() }).
+-type sdp_hex() :: #hex{}.
+
+-record(url, { value = "" :: string() | binary() }).
+-type sdp_url() :: #url{}.
+
+-record(boolean, { value = false :: boolean() }).
+-type sdp_boolean() :: #boolean{}.
+
+-type sdp_value() :: sdp_nil() | sdp_integer() |
+		     sdp_uuid() | sdp_text() | sdp_boolean() |
+		     sdp_sequence() | sdp_alternative().
+
+-record(sequence,
+	{
+	 values = [] :: [sdp_value()]
+	}).
+-type sdp_sequence() :: #sequence{}.
+
+-record(alternative,
+	{
+	 values = [] :: [sdp_value()]
+	}).
+-type sdp_alternative() :: #alternative{}.
+
+-record(attribute,
+	{
+	 id   :: sdp_uuid() | string(),
+	 vaue :: sdp_value()
+	}).
+-type sdp_attribute() :: #attribute{}.
+
+-record(record,
+	{
+	 attribute_list = [] :: [sdp_attribute()]
+	}).
+-type sdp_record() :: #record{}.
+
 -endif.
