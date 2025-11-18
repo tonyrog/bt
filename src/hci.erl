@@ -25,7 +25,7 @@
 -include("../include/hci_drv.hrl").
 -include("hci_api.hrl").
 
-%% -define(debug, true).
+-define(debug, true).
 
 -ifdef(debug).
 -define(dbg(F), io:format((F))).
@@ -365,7 +365,7 @@ call(Hci,OGF,OCF,Data,Event,Timeout) when is_integer(Event),
 call_(Hci,OGF,OCF,Data,Event,Decode,Timeout) ->
     Opcode = ?cmd_opcode_pack(OGF,OCF),
     {ok,OldFilter} = bt_hci:get_filter(Hci),
-    %% ?dbg("call: saved_filter = ~p\n", [OldFilter]),
+    ?dbg("call: saved_filter = ~p\n", [OldFilter]),
     NewFilter = bt_hci:make_filter(Opcode,
 				    [?HCI_EVENT_PKT],
 				    [?EVT_CMD_STATUS,
@@ -373,7 +373,7 @@ call_(Hci,OGF,OCF,Data,Event,Decode,Timeout) ->
 				     ?EVT_LE_META_EVENT,
 				     %% ?EVT_REMOTE_NAME_REQ_COMPLETE,
 				     Event]),
-    %% ?dbg("call: new_filter = ~p\n", [NewFilter]),
+    ?dbg("call: new_filter = ~p\n", [NewFilter]),
     case bt_hci:set_filter(Hci, NewFilter) of
 	ok ->
 	    {ok,_} = send(Hci,Opcode,Data),
