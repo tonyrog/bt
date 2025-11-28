@@ -7,7 +7,9 @@
 
 -module(bt_make_hci_api).
 
--compile(export_all).
+-export([main/0]).
+
+%% -compile(export_all).
 
 %%
 %% the def file content consist of:
@@ -145,19 +147,19 @@ write_send(Erl,OGF,OCF,Defs) ->
     Cp = list_to_atom(FuncName++"_cp"),
     case find_struct(Cp, Defs) of
 	false ->
-	    io:format(Erl, "send_~s(Socket) ->\n",
+	    io:format(Erl, "send_~s(Hci) ->\n",
 		      [FuncName]),
-	    io:format(Erl, "  hci:send(Socket,?~s,?~s,<<>>).\n\n",
+	    io:format(Erl, "  hci:send(Hci,?~s,?~s,<<>>).\n\n",
 		      [OGF,OCF]);
 	{struct,Cp,Fields} ->
 	    FieldNames = field_names(Fields),
 	    MacroArgs = [ var_name(F) || F <- FieldNames ],
 	    %% generate the argument structure 
 	    io:format(Erl,
-		      "send_~s(Socket,~s) ->\n",
+		      "send_~s(Hci,~s) ->\n",
 		      [FuncName, join(MacroArgs,",")]),
 	    io:format(Erl,
-		      "  hci:send(Socket,?~s,?~s,<<?~s_bin(~s)>>).\n\n",
+		      "  hci:send(Hci,?~s,?~s,<<?~s_bin(~s)>>).\n\n",
 		      [OGF,OCF,Cp,join(MacroArgs,",")])
     end.
 
@@ -180,19 +182,19 @@ write_call(Erl,OGF,OCF,Defs) ->
 	      end,
     case find_struct(Cp, Defs) of
 	false ->
-	    io:format(Erl, "~s(Socket) ->\n",
+	    io:format(Erl, "~s(Hci,Event,Timeout) ->\n",
 		      [FuncName]),
-	    io:format(Erl, "  hci:call(Socket,?~s,?~s,<<>>,~s).\n\n",
+	    io:format(Erl, "  hci:call(Hci,?~s,?~s,<<>>,Event,~s,Timeout).\n\n",
 		      [OGF,OCF,Decoder]);
 	{struct,Cp,Fields} ->
 	    FieldNames = field_names(Fields),
 	    MacroArgs = [ var_name(F) || F <- FieldNames ],
 	    %% generate the argument structure 
 	    io:format(Erl,
-		      "~s(Socket,~s) ->\n",
+		      "~s(Hci,~s,Event,Timeout) ->\n",
 		      [FuncName, join(MacroArgs,",")]),
 	    io:format(Erl,
-		      "  hci:call(Socket,?~s,?~s,<<?~s_bin(~s)>>,~s).\n\n",
+		      "  hci:call(Hci,?~s,?~s,<<?~s_bin(~s)>>,Event,~s,Timeout).\n\n",
 		      [OGF,OCF,Cp,join(MacroArgs,","),Decoder])
     end.
 

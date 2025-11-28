@@ -72,7 +72,7 @@ static void unload(ErlNifEnv* env, void* priv_data);
 
 #define NIF_LIST					\
     NIF("open", 0, nif_open)				\
-    NIF("bind", 2, nif_bind)				\
+    NIF("bind", 3, nif_bind)				\
     NIF("close", 1, nif_close)				\
     NIF("dev_up", 1, nif_dev_up)			\
     NIF("dev_up", 2, nif_dev_up)			\
@@ -193,6 +193,7 @@ static void* realloc_buffer(handle_t* hp, size_t len)
     return hp->buf;
 }
 
+#ifdef DEBUG
 static void print_state(handle_t* hp)
 {
     if (hp->state & OPEN) enif_fprintf(stderr, "|OPEN");
@@ -209,6 +210,7 @@ static void print_state(handle_t* hp)
     if (hp->sel_mask & ERL_NIF_SELECT_ERROR)
 	enif_fprintf(stderr, "|ERROR");
 }
+#endif
 
 static void dtor(ErlNifEnv* env, handle_t* hp)
 {
@@ -362,8 +364,8 @@ static ERL_NIF_TERM make_ok(ErlNifEnv* env, handle_t* handle)
 // match hci_drv.hrl record(hci_filter) !
 static ERL_NIF_TERM make_hci_filter(ErlNifEnv* env, struct hci_filter* fp)
 {
-    uint64_t event_mask =
-	(((uint64_t)fp->event_mask[0]) << 32) | fp->event_mask[1];
+    uint64_t event_mask = fp->event_mask[1];
+    event_mask = (event_mask << 32) | fp->event_mask[0];
     return enif_make_tuple4(env,
 			    ATOM(hci_filter),
 			    enif_make_uint(env, fp->type_mask),
@@ -375,7 +377,7 @@ static int get_hci_filter(ErlNifEnv* env, ERL_NIF_TERM arg,
 			  struct hci_filter* fp)
 {
     uint64_t event_mask;
-    uint32_t value;
+    unsigned int value;
     const ERL_NIF_TERM* fields;
     int arity;
     
@@ -388,8 +390,8 @@ static int get_hci_filter(ErlNifEnv* env, ERL_NIF_TERM arg,
     fp->type_mask = value;
     if (!enif_get_uint64(env, fields[2], &event_mask))
 	return 0;
-    fp->event_mask[0] = event_mask;    
-    fp->event_mask[1] = (event_mask >> 32);
+    fp->event_mask[0] = event_mask;  // LSB events 0-31
+    fp->event_mask[1] = (event_mask >> 32);  // events 32-63
     if (!enif_get_uint(env, fields[3], &value))
 	return 0;
     fp->opcode = value;
@@ -552,10 +554,13 @@ static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
 {
     handle_t* hp;
     struct sockaddr_hci a;
-    int dev_id;
+    unsigned int dev_id;
+    unsigned int channel;
 
     memset(&a, 0, sizeof(a));
-    if (!enif_get_int(env, argv[1], &dev_id))
+    if (!enif_get_uint(env, argv[1], &dev_id))
+	enif_make_badarg(env);
+    if (!enif_get_uint(env, argv[2], &channel))
 	enif_make_badarg(env);
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
@@ -565,6 +570,7 @@ static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
     memset(&a, 0, sizeof(a));
     a.hci_family = AF_BLUETOOTH;
     a.hci_dev = dev_id;
+    a.hci_channel = channel;
     if (bind(hp->fd, (struct sockaddr *) &a, sizeof(a)) < 0)
 	return make_herror(env, hp, errno);
     hp->state |= BOUND;  // set under lock?

@@ -1251,7 +1251,7 @@
 -define(le_set_scan_enable_cp_bin(Enable,Filter_dup),Enable:1/unsigned-unit:8,Filter_dup:1/unsigned-unit:8).
 -define(LE_SET_SCAN_ENABLE_CP_SIZE, 2).
 -define(OCF_LE_CREATE_CONN, 13).
--record(le_create_connection_cp, {
+-record(le_create_conn_cp, {
   interval,
   window,
   initiator_filter,
@@ -1265,7 +1265,7 @@
   min_ce_length,
   max_ce_length
 }).
--define(le_create_connection_cp_bin(Interval,Window,Initiator_filter,Peer_bdaddr_type,Peer_bdaddr,Own_bdaddr_type,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length),Interval:1/little-unsigned-unit:16,Window:1/little-unsigned-unit:16,Initiator_filter:1/unsigned-unit:8,Peer_bdaddr_type:1/unsigned-unit:8,Peer_bdaddr:6/unit:8-binary,Own_bdaddr_type:1/unsigned-unit:8,Min_interval:1/little-unsigned-unit:16,Max_interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Min_ce_length:1/little-unsigned-unit:16,Max_ce_length:1/little-unsigned-unit:16).
+-define(le_create_conn_cp_bin(Interval,Window,Initiator_filter,Peer_bdaddr_type,Peer_bdaddr,Own_bdaddr_type,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length),Interval:1/little-unsigned-unit:16,Window:1/little-unsigned-unit:16,Initiator_filter:1/unsigned-unit:8,Peer_bdaddr_type:1/unsigned-unit:8,Peer_bdaddr:6/unit:8-binary,Own_bdaddr_type:1/unsigned-unit:8,Min_interval:1/little-unsigned-unit:16,Max_interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Min_ce_length:1/little-unsigned-unit:16,Max_ce_length:1/little-unsigned-unit:16).
 -define(LE_CREATE_CONN_CP_SIZE, 25).
 -define(OCF_LE_CREATE_CONN_CANCEL, 14).
 -define(OCF_LE_READ_WHITE_LIST_SIZE, 15).
@@ -1291,7 +1291,7 @@
 -define(le_remove_device_from_white_list_cp_bin(Bdaddr_type,Bdaddr),Bdaddr_type:1/unsigned-unit:8,Bdaddr:6/unit:8-binary).
 -define(LE_REMOVE_DEVICE_FROM_WHITE_LIST_CP_SIZE, 7).
 -define(OCF_LE_CONN_UPDATE, 19).
--record(le_connection_update_cp, {
+-record(le_conn_update_cp, {
   handle,
   min_interval,
   max_interval,
@@ -1300,7 +1300,7 @@
   min_ce_length,
   max_ce_length
 }).
--define(le_connection_update_cp_bin(Handle,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length),Handle:1/little-unsigned-unit:16,Min_interval:1/little-unsigned-unit:16,Max_interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Min_ce_length:1/little-unsigned-unit:16,Max_ce_length:1/little-unsigned-unit:16).
+-define(le_conn_update_cp_bin(Handle,Min_interval,Max_interval,Latency,Supervision_timeout,Min_ce_length,Max_ce_length),Handle:1/little-unsigned-unit:16,Min_interval:1/little-unsigned-unit:16,Max_interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Min_ce_length:1/little-unsigned-unit:16,Max_ce_length:1/little-unsigned-unit:16).
 -define(LE_CONN_UPDATE_CP_SIZE, 14).
 -define(OCF_LE_SET_HOST_CHANNEL_CLASSIFICATION, 20).
 -record(le_set_host_channel_classification_cp, {
@@ -1813,7 +1813,7 @@
 -define(evt_le_meta_event_bin(Subevent,Data),Subevent:1/unsigned-unit:8,Data:0/unit:8-binary).
 -define(EVT_LE_META_EVENT_SIZE, 1).
 -define(EVT_LE_CONN_COMPLETE, 1).
--record(evt_le_connection_complete, {
+-record(evt_le_conn_complete, {
   status,
   handle,
   role,
@@ -1824,27 +1824,27 @@
   supervision_timeout,
   master_clock_accuracy
 }).
--define(evt_le_connection_complete_bin(Status,Handle,Role,Peer_bdaddr_type,Peer_bdaddr,Interval,Latency,Supervision_timeout,Master_clock_accuracy),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Role:1/unsigned-unit:8,Peer_bdaddr_type:1/unsigned-unit:8,Peer_bdaddr:6/unit:8-binary,Interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Master_clock_accuracy:1/unsigned-unit:8).
+-define(evt_le_conn_complete_bin(Status,Handle,Role,Peer_bdaddr_type,Peer_bdaddr,Interval,Latency,Supervision_timeout,Master_clock_accuracy),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Role:1/unsigned-unit:8,Peer_bdaddr_type:1/unsigned-unit:8,Peer_bdaddr:6/unit:8-binary,Interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16,Master_clock_accuracy:1/unsigned-unit:8).
 -define(EVT_LE_CONN_COMPLETE_SIZE, 18).
 -define(EVT_LE_ADVERTISING_REPORT, 2).
--record(le_advertising_info, {
+-record(le_advertising_report, {
   evt_type,
   bdaddr_type,
   bdaddr,
   length,
   data
 }).
--define(le_advertising_info_bin(Evt_type,Bdaddr_type,Bdaddr,Length,Data),Evt_type:1/unsigned-unit:8,Bdaddr_type:1/unsigned-unit:8,Bdaddr:6/unit:8-binary,Length:1/unsigned-unit:8,Data:0/unit:8-binary).
+-define(le_advertising_report_bin(Evt_type,Bdaddr_type,Bdaddr,Length,Data),Evt_type:1/unsigned-unit:8,Bdaddr_type:1/unsigned-unit:8,Bdaddr:6/unit:8-binary,Length:1/unsigned-unit:8,Data:0/unit:8-binary).
 -define(LE_ADVERTISING_INFO_SIZE, 9).
 -define(EVT_LE_CONN_UPDATE_COMPLETE, 3).
--record(evt_le_connection_update_complete, {
+-record(evt_le_conn_update_complete, {
   status,
   handle,
   interval,
   latency,
   supervision_timeout
 }).
--define(evt_le_connection_update_complete_bin(Status,Handle,Interval,Latency,Supervision_timeout),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16).
+-define(evt_le_conn_update_complete_bin(Status,Handle,Interval,Latency,Supervision_timeout),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16,Interval:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Supervision_timeout:1/little-unsigned-unit:16).
 -define(EVT_LE_CONN_UPDATE_COMPLETE_SIZE, 9).
 -define(EVT_LE_READ_REMOTE_USED_FEATURES_COMPLETE, 4).
 -record(evt_le_read_remote_used_features_complete, {
@@ -1871,12 +1871,12 @@
 -define(EVT_PHYSICAL_LINK_COMPLETE_SIZE, 2).
 -define(EVT_CHANNEL_SELECTED, 65).
 -define(EVT_DISCONNECT_PHYSICAL_LINK_COMPLETE, 66).
--record(evt_disconn_physical_link_complete, {
+-record(evt_disconnect_physical_link_complete, {
   status,
   handle,
   reason
 }).
--define(evt_disconn_physical_link_complete_bin(Status,Handle,Reason),Status:1/unsigned-unit:8,Handle:1/unsigned-unit:8,Reason:1/unsigned-unit:8).
+-define(evt_disconnect_physical_link_complete_bin(Status,Handle,Reason),Status:1/unsigned-unit:8,Handle:1/unsigned-unit:8,Reason:1/unsigned-unit:8).
 -define(EVT_DISCONNECT_PHYSICAL_LINK_COMPLETE_SIZE, 3).
 -define(EVT_PHYSICAL_LINK_LOSS_EARLY_WARNING, 67).
 -record(evt_physical_link_loss_warning, {

@@ -13,12 +13,15 @@
 -define(HCI_ACLDATA_PKT,	16#02).
 -define(HCI_SCODATA_PKT,	16#03).
 -define(HCI_EVENT_PKT,		16#04).
+-define(HCI_ISODATA_PKT,	16#05).
 -define(HCI_VENDOR_PKT,		16#ff).
 
 %% Command opcode pack/unpack
--define(cmd_opcode_pack(OGF, OCF), (((OCF) band 16#03ff)bor((OGF) bsl 10))).
--define(cmd_opcode_ogf(OP),	((OP) bsr 10)).
--define(cmd_opcode_ocf(OP),	((OP) band 16#03ff)).
+-define(cmd_opcode_pack(OGF, OCF), (((OCF) band 16#03ff) bor 
+					(((OGF) band 16#3f) bsl 10))).
+-define(cmd_opcode_ogf(OP),  ((OP) bsr 10)).
+-define(cmd_opcode_ocf(OP),  ((OP) band 16#03ff)).
+
 
 %% ACL handle and flags pack/unpack
 -define(acl_handle_pack(H, F),	(((H) band 16#0fff) bor ((F) bsl 12))).
@@ -237,14 +240,20 @@
 	  link_mode::uint32_t()
 	}).
 
+-define(HCI_CHANNEL_RAW,	0).
+-define(HCI_CHANNEL_USER,	1).
+-define(HCI_CHANNEL_MONITOR,	2).
+-define(HCI_CHANNEL_CONTROL,	3).
+-define(HCI_CHANNEL_LOGGING,	4).
+
 -record(hci_filter,
 	{
-	  type_mask  :: uint32_t(),
-	  event_mask :: uint64_t(),  %% encoded as 2*uint32_t()
-	  opcode     :: uint16_t()
+	  type_mask  :: uint32_t() | all | [atom()|integer()],
+	  event_mask :: uint64_t() | all | [atom()|integer()],
+	  opcode     :: uint16_t() | any | {atom()|integer(),atom()|integer()}
 	}).
 
-
+%% what?
 -define(HCI_FLT_TYPE_BITS,	31).
 -define(HCI_FLT_EVENT_BITS,	63).
 -define(HCI_FLT_OGF_BITS,	63).

@@ -1469,7 +1469,7 @@
 {define, 'LE_SET_SCAN_ENABLE_CP_SIZE', 2}.
 
 {define, 'OCF_LE_CREATE_CONN',			16#000D}.
-{struct, le_create_connection_cp,
+{struct, le_create_conn_cp,
  [
 	{uint16_t,	interval},
 	{uint16_t,	window},
@@ -1515,7 +1515,7 @@
 {define, 'LE_REMOVE_DEVICE_FROM_WHITE_LIST_CP_SIZE', 7}.
 
 {define, 'OCF_LE_CONN_UPDATE',			16#0013}.
-{struct, le_connection_update_cp,
+{struct, le_conn_update_cp,
  [
 	{uint16_t,	handle},
 	{uint16_t,	min_interval},
@@ -2109,7 +2109,7 @@
 {define, 'EVT_LE_META_EVENT_SIZE', 1}.
 
 {define, 'EVT_LE_CONN_COMPLETE',	16#01}.
-{struct, evt_le_connection_complete,
+{struct, evt_le_conn_complete,
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
@@ -2124,7 +2124,7 @@
 {define, 'EVT_LE_CONN_COMPLETE_SIZE', 18}.
 
 {define, 'EVT_LE_ADVERTISING_REPORT',	16#02}.
-{struct, le_advertising_info,
+{struct, le_advertising_report,
  [
 	{uint8_t,	evt_type},
 	{uint8_t,	bdaddr_type},
@@ -2135,7 +2135,7 @@
 {define, 'LE_ADVERTISING_INFO_SIZE', 9}.
 
 {define, 'EVT_LE_CONN_UPDATE_COMPLETE',	16#03}.
-{struct, evt_le_connection_update_complete,
+{struct, evt_le_conn_update_complete,
  [
 	{uint8_t,	status},
 	{uint16_t,	handle},
@@ -2174,7 +2174,7 @@
 {define, 'EVT_CHANNEL_SELECTED',		16#41}.
 
 {define, 'EVT_DISCONNECT_PHYSICAL_LINK_COMPLETE',	16#42}.
-{struct, evt_disconn_physical_link_complete,
+{struct, evt_disconnect_physical_link_complete,
  [
 	{uint8_t,	status},
 	{uint8_t,	handle},

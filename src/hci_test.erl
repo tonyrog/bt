@@ -10,6 +10,9 @@
 -compile(export_all).
 -include("hci_api.hrl").
 
+-define(HCI_TIMEOUT, 2000).
+-define(HCI_NOEVENT, -1).
+
 inquiry() ->
     with_socket(0, fun(S) -> inquiry(S) end).
 
@@ -19,9 +22,9 @@ pinquiry() ->
 %% scan for 10*1.28 seconds, wait for max 5 replies
 inquiry(Hci) ->
     Lap = <<16#33,16#8b,16#9e>>,
-    A = hci_api:inquiry(Hci, Lap, 10, 5),
+    A = hci_api:inquiry(Hci, Lap, 10, 5,?HCI_NOEVENT,?HCI_TIMEOUT),
     timer:sleep(12800),
-    B = hci_api:inquiry_cancel(Hci),
+    B = hci_api:inquiry_cancel(Hci,?HCI_NOEVENT,?HCI_TIMEOUT),
     {A, B}.
 
 
@@ -29,15 +32,17 @@ inquiry(Hci) ->
 pinquiry(Hci) ->
     Lap = <<16#33,16#8b,16#9e>>,
     Max = 100, Min = 50, 
-    R = hci_api:periodic_inquiry(Hci, Max, Min, Lap, 10, 2),
+    R = hci_api:periodic_inquiry(Hci, Max, Min, Lap, 10, 2,?HCI_NOEVENT,?HCI_TIMEOUT),
     timer:sleep(10000),
-    hci_api:periodic_inquiry_cancel(Hci),
+    hci_api:periodic_inquiry_cancel(Hci,?HCI_NOEVENT,?HCI_TIMEOUT),
     R.
 
 
 local_name() -> local_name(0).
 local_name(DevID) ->
-    with_socket(DevID, fun(S) -> hci_api:read_local_name(S) end).
+    with_socket(DevID, fun(S) -> 
+			       hci_api:read_local_name(S,?HCI_NOEVENT,?HCI_TIMEOUT) 
+		       end).
 
 
 
