@@ -135,10 +135,14 @@ typedef struct _handle_t {
     hstate_t      state;
     int           fd;
     int           dev_id;    // bound dev_id
+    int           channel;   // HCI channel (0=RAW, 1=USER)
     size_t        buf_len;
     char*         buf;
     int           sel_mask;       // last select op ERL_NIF_SELECT_ READ|WRITE
     ErlDrvMonitor mon;       // monitor when selecting
+    // Software filter for HCI_CHANNEL_USER
+    struct hci_filter sw_filter;
+    int           sw_filter_set;  // 1 if software filter is active
 } handle_t;
 
 DECL_ATOM(ok);
@@ -571,10 +575,16 @@ static ERL_NIF_TERM nif_bind(ErlNifEnv* env, int argc,
     a.hci_family = AF_BLUETOOTH;
     a.hci_dev = dev_id;
     a.hci_channel = channel;
-    if (bind(hp->fd, (struct sockaddr *) &a, sizeof(a)) < 0)
+    DEBUGF("nif_bind: dev_id=%u, channel=%u (RAW=0, USER=1)", dev_id, channel);
+    if (bind(hp->fd, (struct sockaddr *) &a, sizeof(a)) < 0) {
+        DEBUGF("nif_bind: bind failed errno=%d", errno);
 	return make_herror(env, hp, errno);
+    }
+    DEBUGF("nif_bind: bind succeeded, channel=%u", channel);
     hp->state |= BOUND;  // set under lock?
     hp->dev_id = dev_id;
+    hp->channel = channel;  // Store channel type for filter handling
+    hp->sw_filter_set = 0;  // No software filter yet
     return make_ok(env, hp);    
 }
 
@@ -586,16 +596,29 @@ static ERL_NIF_TERM nif_get_filter(ErlNifEnv* env, int argc,
     struct hci_filter filt;
     socklen_t flen;
     ERL_NIF_TERM r;
-    
+
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
+
+    // For HCI_CHANNEL_USER, use software filter
+    if (hp->channel == HCI_CHANNEL_USER) {
+        if (hp->sw_filter_set) {
+            r = make_hci_filter(env, &hp->sw_filter);
+        } else {
+            // Return a permissive filter if none set
+            memset(&filt, 0xff, sizeof(filt));
+            r = make_hci_filter(env, &filt);
+        }
+        return make_result(env, hp, r);
+    }
+
     flen = sizeof(filt);
     if (getsockopt(hp->fd, SOL_HCI, HCI_FILTER, &filt, &flen) < 0)
 	return make_herror(env, hp, errno);
-    
+
     r = make_hci_filter(env, &filt);
     return make_result(env, hp, r);
 }
@@ -605,7 +628,7 @@ static ERL_NIF_TERM nif_set_filter(ErlNifEnv* env, int argc,
 {
     handle_t* hp;
     struct hci_filter filt;
-    
+
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
@@ -613,6 +636,18 @@ static ERL_NIF_TERM nif_set_filter(ErlNifEnv* env, int argc,
     }
     if (!get_hci_filter(env, argv[1], &filt))
 	return make_herror(env, hp, errno);
+
+    // For HCI_CHANNEL_USER, use software filter
+    if (hp->channel == HCI_CHANNEL_USER) {
+        DEBUGF("nif_set_filter USER: type_mask=0x%x, event_mask=0x%x:0x%x (full=0x%016llx), opcode=0x%x",
+               filt.type_mask, filt.event_mask[1], filt.event_mask[0],
+               (unsigned long long)(((uint64_t)filt.event_mask[1] << 32) | filt.event_mask[0]),
+               filt.opcode);
+        hp->sw_filter = filt;
+        hp->sw_filter_set = 1;
+        return make_ok(env, hp);
+    }
+
     if (setsockopt(hp->fd, SOL_HCI, HCI_FILTER, &filt,sizeof(filt)) < 0)
 	return make_herror(env, hp, errno);
     return make_ok(env, hp);
@@ -1191,7 +1226,40 @@ static ERL_NIF_TERM nif_debug(ErlNifEnv* env, int argc,
     return ATOM(ok);
 }
 
-    
+// Check if packet passes HCI filter (software implementation)
+// Returns 1 if packet passes, 0 if filtered out
+static int packet_passes_filter(struct hci_filter* filt, uint8_t* buf, int len)
+{
+    if (len < 1) return 0;
+
+    uint8_t pkt_type = buf[0];
+
+    // Check packet type mask
+    if (!(filt->type_mask & (1 << pkt_type))) {
+        DEBUGF("SW_FILTER: pkt_type=%d rejected (type_mask=0x%x)", pkt_type, filt->type_mask);
+        return 0;
+    }
+
+    // For HCI events, check event mask
+    if (pkt_type == HCI_EVENT_PKT && len >= 2) {
+        uint8_t event = buf[1];
+        uint64_t event_mask = ((uint64_t)filt->event_mask[1] << 32) | filt->event_mask[0];
+        uint64_t event_bit = (1ULL << event);
+
+        if (!(event_mask & event_bit)) {
+            DEBUGF("SW_FILTER: event=%d (0x%02x) rejected (mask=0x%016llx)",
+                   event, event, (unsigned long long)event_mask);
+            return 0;
+        }
+        DEBUGF("SW_FILTER: event=%d (0x%02x) PASSED", event, event);
+    } else {
+        DEBUGF("SW_FILTER: pkt_type=%d len=%d PASSED", pkt_type, len);
+    }
+
+    // ACL and other packet types pass through if type is allowed
+    return 1;
+}
+
 // write(Handle::ref(), Data::binary())
 static ERL_NIF_TERM nif_write(ErlNifEnv* env, int argc,
 			      const ERL_NIF_TERM argv[])
@@ -1224,15 +1292,49 @@ static ERL_NIF_TERM nif_read(ErlNifEnv* env, int argc,
     unsigned char buffer[MAX_HCI_BUF];
     ERL_NIF_TERM data;
     int n;
+    int tries = 0;
 
     switch(get_handle(env, argv[0], &hp, OPEN, 0)) {
     case -1: return enif_make_badarg(env);
     case 0:  return make_bad_handle(env);
     default: break;
     }
+
+read_again:
     n = read(hp->fd, (char*)buffer, sizeof(buffer));
-    if (n < 0)
+    if (n < 0) {
+        if (tries > 0) {
+            DEBUGF("nif_read: EAGAIN after %d tries", tries);
+        }
 	return make_herror(env, hp, errno);
+    }
+
+    // Debug: dump raw bytes for any read
+    DEBUGF("nif_read: got %d bytes, channel=%d", n, hp->channel);
+#ifdef DEBUG
+    if (n > 0) {
+        char hexdump[256];
+        int hexlen = 0;
+        for (int i = 0; i < n && i < 32 && hexlen < 250; i++) {
+            hexlen += snprintf(hexdump + hexlen, sizeof(hexdump) - hexlen, "%02x ", buffer[i]);
+        }
+        DEBUGF("nif_read RAW: %s%s", hexdump, n > 32 ? "..." : "");
+    }
+#endif
+
+    // For HCI_CHANNEL_USER with software filter, check if packet passes
+    if (hp->channel == HCI_CHANNEL_USER && hp->sw_filter_set) {
+        if (!packet_passes_filter(&hp->sw_filter, buffer, n)) {
+            // Packet filtered out, try reading next one
+            // Limit retries to avoid infinite loop in non-blocking mode
+            if (++tries < 100)
+                goto read_again;
+            // No more data available that passes filter
+            DEBUGF("nif_read: exhausted %d retries", tries);
+            return make_herror(env, hp, EAGAIN);
+        }
+    }
+
     ptr = enif_make_new_binary(env, n, &data);
     memcpy(ptr, buffer, n);
     return make_result(env, hp, data);

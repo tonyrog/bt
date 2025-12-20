@@ -11,7 +11,9 @@
 -define(LOG_LEVEL_INFO,      6).
 -define(LOG_LEVEL_DEBUG,     7).
 
--define(BT_LOG_LEVEL, ?LOG_LEVEL_DEBUG).
+%%-define(BT_LOG_LEVEL, ?LOG_LEVEL_DEBUG).
+%%-define(BT_LOG_LEVEL, ?LOG_LEVEL_ERROR).
+-define(BT_LOG_LEVEL, ?LOG_LEVEL_INFO).
 
 -define(debug(Fmt),   ?bt_log(?LOG_LEVEL_DEBUG,"DEBUG: " Fmt ,[])).
 -define(warning(Fmt), ?bt_log(?LOG_LEVEL_WARNING,"WARNING: " Fmt,[])).

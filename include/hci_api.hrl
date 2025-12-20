@@ -1409,6 +1409,37 @@
 }).
 -define(le_test_end_rp_bin(Status,Num_pkts),Status:1/unsigned-unit:8,Num_pkts:1/little-unsigned-unit:16).
 -define(LE_TEST_END_RP_SIZE, 3).
+-define(OCF_LE_REMOTE_CONN_PARAM_REQ_REPLY, 32).
+-record(le_remote_conn_param_req_reply_cp, {
+  handle,
+  interval_min,
+  interval_max,
+  latency,
+  timeout,
+  min_ce_length,
+  max_ce_length
+}).
+-define(le_remote_conn_param_req_reply_cp_bin(Handle,Interval_min,Interval_max,Latency,Timeout,Min_ce_length,Max_ce_length),Handle:1/little-unsigned-unit:16,Interval_min:1/little-unsigned-unit:16,Interval_max:1/little-unsigned-unit:16,Latency:1/little-unsigned-unit:16,Timeout:1/little-unsigned-unit:16,Min_ce_length:1/little-unsigned-unit:16,Max_ce_length:1/little-unsigned-unit:16).
+-define(LE_REMOTE_CONN_PARAM_REQ_REPLY_CP_SIZE, 14).
+-record(le_remote_conn_param_req_reply_rp, {
+  status,
+  handle
+}).
+-define(le_remote_conn_param_req_reply_rp_bin(Status,Handle),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16).
+-define(LE_REMOTE_CONN_PARAM_REQ_REPLY_RP_SIZE, 3).
+-define(OCF_LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY, 33).
+-record(le_remote_conn_param_req_neg_reply_cp, {
+  handle,
+  reason
+}).
+-define(le_remote_conn_param_req_neg_reply_cp_bin(Handle,Reason),Handle:1/little-unsigned-unit:16,Reason:1/unsigned-unit:8).
+-define(LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY_CP_SIZE, 3).
+-record(le_remote_conn_param_req_neg_reply_rp, {
+  status,
+  handle
+}).
+-define(le_remote_conn_param_req_neg_reply_rp_bin(Status,Handle),Status:1/unsigned-unit:8,Handle:1/little-unsigned-unit:16).
+-define(LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY_RP_SIZE, 3).
 -define(OGF_VENDOR_CMD, 63).
 -define(EVT_INQUIRY_COMPLETE, 1).
 -define(EVT_INQUIRY_RESULT, 2).
@@ -1862,6 +1893,14 @@
 }).
 -define(evt_le_long_term_key_request_bin(Handle,Random,Diversifier),Handle:1/little-unsigned-unit:16,Random:1/little-unsigned-unit:64,Diversifier:1/little-unsigned-unit:16).
 -define(EVT_LE_LTK_REQUEST_SIZE, 12).
+-define(EVT_LE_REMOTE_CONN_PARAM_REQUEST, 6).
+-define(EVT_LE_DATA_LENGTH_CHANGE, 7).
+-define(EVT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE, 8).
+-define(EVT_LE_GENERATE_DHKEY_COMPLETE, 9).
+-define(EVT_LE_ENHANCED_CONN_COMPLETE, 10).
+-define(EVT_LE_DIRECT_ADVERTISING_REPORT, 11).
+-define(EVT_LE_PHY_UPDATE_COMPLETE, 12).
+-define(EVT_LE_EXTENDED_ADVERTISING_REPORT, 13).
 -define(EVT_PHYSICAL_LINK_COMPLETE, 64).
 -record(evt_physical_link_complete, {
   status,

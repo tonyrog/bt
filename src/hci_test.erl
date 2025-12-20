@@ -8,7 +8,7 @@
 -module(hci_test).
 
 -compile(export_all).
--include("hci_api.hrl").
+-include("../include/hci_api.hrl").
 
 -define(HCI_TIMEOUT, 2000).
 -define(HCI_NOEVENT, -1).

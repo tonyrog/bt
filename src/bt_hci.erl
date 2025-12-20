@@ -48,6 +48,8 @@
 -export([decode_event/1]).
 -export([decode_le_event/1]).
 -export([decode_le_event_mask/1]).
+-export([encode_le_event/1]).
+-export([encode_le_event_mask/1]).
 
 -export([preloaded_atoms_/0]). % internal
 
@@ -64,7 +66,7 @@
 	      devid/0, channel/0]).
 
 -include("../include/hci.hrl").
--include("hci_api.hrl").
+-include("../include/hci_api.hrl").
 
 -define(nif_stub(),nif_stub_error(?LINE)).
 nif_stub_error(Line) ->
@@ -378,10 +380,10 @@ decode_event(Evt) ->
 	_ -> Evt
     end.
 
-decode_le_event_mask(Mask) when Mask band 1 =:= 1 ->
-    [vendor | decode_bits_(Mask, 1, 63, 16#0000000000000002, [])];
+%%decode_le_event_mask(Mask) when Mask band 1 =:= 1 ->
+%%    [vendor | decode_bits_(Mask, 1, 63, 16#0000000000000001, [])];
 decode_le_event_mask(Mask) ->
-    decode_le_event_mask_(Mask, 1, 63, 16#0000000000000002, []).
+    decode_le_event_mask_(Mask, 1, 63, 16#0000000000000001, []).
 
 decode_le_event_mask_(0, _I, _N, _Code, Acc) -> Acc;
 decode_le_event_mask_(Mask, I, N, Code, Acc) when I =< N ->
@@ -406,7 +408,28 @@ decode_le_event(Evt) ->
     end.
 
 
+%% event numbers is from 1..63 => bit 0.62
+encode_le_event_mask(E) when is_integer(E), E >= 1 ->  (1 bsl (E-1));
+encode_le_event_mask(E) when is_atom(E) -> encode_le_event(E);
+encode_le_event_mask(Es) when is_list(Es) -> encode_le_event_mask_(Es, 0).
 
+encode_le_event_mask_([E|Es], Mask) ->
+    Bit = encode_le_event(E),
+    encode_le_event_mask_(Es, Bit bor Mask);
+encode_le_event_mask_([], Mask) ->
+    Mask.
+
+encode_le_event(E) when is_integer(E), E >= 1 ->
+    (1 bsl (E-1));
+encode_le_event(E) when is_atom(E) ->
+    case E of
+	le_conn_complete -> (1 bsl (?EVT_LE_CONN_COMPLETE-1));
+	le_advertising_report -> (1 bsl (?EVT_LE_ADVERTISING_REPORT-1));
+	le_conn_update_complete -> (1 bsl (?EVT_LE_CONN_UPDATE_COMPLETE-1));
+	le_read_remote_used_features_complete -> 
+	    (1 bsl (?EVT_LE_READ_REMOTE_USED_FEATURES_COMPLETE-1));
+	le_ltk_request -> (1 bsl (?EVT_LE_LTK_REQUEST-1))
+    end.
 
 decode_bits_(Mask, I, N, Code, Acc) when I =< N ->
     if Code band Mask =/= 0 -> 

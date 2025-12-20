@@ -20,7 +20,17 @@
 -ifndef(UUID_HRL).
 -define(UUID_HRL, true).
 
--define(is_uuid(UUID), is_binary(UUID), size(UUID) == 16).
+-type uuid() :: <<_:128>> | <<_:16>> | <<_:32>>.
+
+-define(is_uuid16(UUID), (byte_size((UUID)) == 2)).
+-define(is_uuid32(UUID), (byte_size((UUID)) == 4)).
+-define(is_uuid128(UUID), (byte_size((UUID)) == 16)).
+-define(is_uuid(UUID), 
+	(?is_uuid16((UUID))
+	 orelse
+	 ?is_uuid32((UUID))
+	 orelse
+	 ?is_uuid128((UUID)))).
 
 -define(is_ieee_802(A),
 	is_tuple((A)), size((A)) == 6,

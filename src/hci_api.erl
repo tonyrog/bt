@@ -1,7 +1,7 @@
 %% -*- erlang -*-
 -module(hci_api).
 -compile(export_all).
--include("hci_api.hrl").
+-include("../include/hci_api.hrl").
 
 
 cname(<<0,_/binary>>) -> [];
@@ -441,6 +441,18 @@ decode_le_test_end_rp(_Data) ->
       #le_test_end_rp { status = Status,num_pkts = Num_pkts }
   end.
 
+decode_le_remote_conn_param_req_reply_rp(_Data) ->
+  case _Data of
+    <<?le_remote_conn_param_req_reply_rp_bin(Status,Handle)>> ->
+      #le_remote_conn_param_req_reply_rp { status = Status,handle = Handle }
+  end.
+
+decode_le_remote_conn_param_req_neg_reply_rp(_Data) ->
+  case _Data of
+    <<?le_remote_conn_param_req_neg_reply_rp_bin(Status,Handle)>> ->
+      #le_remote_conn_param_req_neg_reply_rp { status = Status,handle = Handle }
+  end.
+
 decode_inquiry_info(_Data) ->
   case _Data of
     <<?inquiry_info_bin(Bdaddr,Pscan_rep_mode,Pscan_period_mode,Pscan_mode,Dev_class,Clock_offset)>> ->
@@ -870,6 +882,14 @@ decode(Evt,_Data) ->
 
 decode_le(Evt,_Data) ->
   case Evt of
+    ?EVT_LE_REMOTE_CONN_PARAM_REQUEST -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_DATA_LENGTH_CHANGE -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_GENERATE_DHKEY_COMPLETE -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_ENHANCED_CONN_COMPLETE -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_DIRECT_ADVERTISING_REPORT -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_PHY_UPDATE_COMPLETE -> decode_evt_physical_link_complete(_Data);
+    ?EVT_LE_EXTENDED_ADVERTISING_REPORT -> decode_evt_physical_link_complete(_Data);
     ?EVT_LE_LTK_REQUEST -> decode_evt_le_long_term_key_request(_Data);
     ?EVT_LE_READ_REMOTE_USED_FEATURES_COMPLETE -> decode_evt_le_read_remote_used_features_complete(_Data);
     ?EVT_LE_ADVERTISING_REPORT -> decode_evt_le_conn_update_complete(_Data);
@@ -877,6 +897,12 @@ decode_le(Evt,_Data) ->
     ?EVT_LE_CONN_COMPLETE -> decode_evt_le_conn_complete(_Data);
     _ -> erlang:error(bad_event)
   end.
+
+le_remote_conn_param_req_neg_reply(Hci,Handle,Reason,Event,Timeout) ->
+  hci:call(Hci,?OGF_LE_CTL,?OCF_LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY,<<?le_remote_conn_param_req_neg_reply_cp_bin(Handle,Reason)>>,Event,fun decode_le_remote_conn_param_req_neg_reply_rp/1,Timeout).
+
+le_remote_conn_param_req_reply(Hci,Handle,Interval_min,Interval_max,Latency,Timeout,Min_ce_length,Max_ce_length,Event,Timeout) ->
+  hci:call(Hci,?OGF_LE_CTL,?OCF_LE_REMOTE_CONN_PARAM_REQ_REPLY,<<?le_remote_conn_param_req_reply_cp_bin(Handle,Interval_min,Interval_max,Latency,Timeout,Min_ce_length,Max_ce_length)>>,Event,fun decode_le_remote_conn_param_req_reply_rp/1,Timeout).
 
 le_test_end(Hci,Event,Timeout) ->
   hci:call(Hci,?OGF_LE_CTL,?OCF_LE_TEST_END,<<>>,Event,fun decode_le_test_end_rp/1,Timeout).

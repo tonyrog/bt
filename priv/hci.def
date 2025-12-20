@@ -1646,6 +1646,40 @@
 ]}.
 {define, 'LE_TEST_END_RP_SIZE', 3}.
 
+%% BLE 4.1+ commands
+{define, 'OCF_LE_REMOTE_CONN_PARAM_REQ_REPLY',		16#0020}.
+{struct, le_remote_conn_param_req_reply_cp,
+ [
+	{uint16_t,	handle},
+	{uint16_t,	interval_min},
+	{uint16_t,	interval_max},
+	{uint16_t,	latency},
+	{uint16_t,	timeout},
+	{uint16_t,	min_ce_length},
+	{uint16_t,	max_ce_length}
+]}.
+{define, 'LE_REMOTE_CONN_PARAM_REQ_REPLY_CP_SIZE', 14}.
+{struct, le_remote_conn_param_req_reply_rp,
+ [
+	{uint8_t,	status},
+	{uint16_t,	handle}
+]}.
+{define, 'LE_REMOTE_CONN_PARAM_REQ_REPLY_RP_SIZE', 3}.
+
+{define, 'OCF_LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY',	16#0021}.
+{struct, le_remote_conn_param_req_neg_reply_cp,
+ [
+	{uint16_t,	handle},
+	{uint8_t,	reason}
+]}.
+{define, 'LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY_CP_SIZE', 3}.
+{struct, le_remote_conn_param_req_neg_reply_rp,
+ [
+	{uint8_t,	status},
+	{uint16_t,	handle}
+]}.
+{define, 'LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY_RP_SIZE', 3}.
+
 %% Vendor specific commands 
 {define, 'OGF_VENDOR_CMD',		16#3f}.
 
@@ -2162,6 +2196,17 @@
 	{uint16_t,	diversifier}
 ]}.
 {define, 'EVT_LE_LTK_REQUEST_SIZE', 12}.
+
+%% BLE 4.1+ LE Meta subevents
+{define, 'EVT_LE_REMOTE_CONN_PARAM_REQUEST', 16#06}.
+{define, 'EVT_LE_DATA_LENGTH_CHANGE', 16#07}.
+{define, 'EVT_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE', 16#08}.
+{define, 'EVT_LE_GENERATE_DHKEY_COMPLETE', 16#09}.
+{define, 'EVT_LE_ENHANCED_CONN_COMPLETE', 16#0A}.
+{define, 'EVT_LE_DIRECT_ADVERTISING_REPORT', 16#0B}.
+%% BLE 5.0+ LE Meta subevents
+{define, 'EVT_LE_PHY_UPDATE_COMPLETE', 16#0C}.
+{define, 'EVT_LE_EXTENDED_ADVERTISING_REPORT', 16#0D}.
 
 {define, 'EVT_PHYSICAL_LINK_COMPLETE',		16#40}.
 {struct, evt_physical_link_complete,

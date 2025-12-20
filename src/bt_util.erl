@@ -26,11 +26,36 @@
 -export([format_address/1]).
 -export([uuid_to_string/1]).
 -export([string_to_uuid/1]).
+-export([uuid_to_little/1]).
+
 -export([string_to_addr/1]).
+-export([maps_take/3]).
+-export([maps_find/3]).
 
 -include("../include/bt.hrl").
-%%
-%% getaddr(Name) -> {ok,Addr} | {error, Reason}
+
+%% convert various formats into bt_mac format
+addr_to_mac(Addr) when ?is_bt_mac(Addr) ->
+    Addr;
+addr_to_mac(<<F,E,D,C,B,A>>) ->
+    {A,B,C,D,E,F};
+addr_to_mac([A1,A0,$:,B1,B0,$:,C1,C0,$:,D1,D0,$:,E1,E0,$:,F1,F0]) ->
+    {list_to_integer([A1,A0], 16),
+     list_to_integer([B1,B0], 16),
+     list_to_integer([C1,C0], 16),
+     list_to_integer([D1,D0], 16),
+     list_to_integer([E1,E0], 16),
+     list_to_integer([F1,F0], 16)};
+addr_to_mac([A1,A0,$-,B1,B0,$-,C1,C0,$-,D1,D0,$-,E1,E0,$-,F1,F0]) ->
+    {list_to_integer([A1,A0], 16),
+     list_to_integer([B1,B0], 16),
+     list_to_integer([C1,C0], 16),
+     list_to_integer([D1,D0], 16),
+     list_to_integer([E1,E0], 16),
+     list_to_integer([F1,F0], 16)}.
+
+%% remove me!
+%% getaddr(Name) -> Addr | {error, Reason}
 %%
 %% Convert address into a bluetooth address
 %% either {A,B,C,D,E,F}
@@ -38,41 +63,41 @@
 %%    or  "AA:BB:CC:DD:EE:FF"  (hex)
 %%    or  "Name" in case the name is resolve
 %%
-getaddr(Addr) when ?is_bt_address(Addr) ->
-    {ok, Addr};
-getaddr(Addr) when is_list(Addr) ->
-    case string:tokens(Addr, ":-") of
-	[As,Bs,Cs,Ds,Es,Fs] ->
-	    Res = (catch lists:map(fun(Hx) -> erlang:list_to_integer(Hx,16) end,
-				   [As,Bs,Cs,Ds,Es,Fs])),
-	    case Res of
-		{'EXIT',_} ->
-		    getaddr_by_name(Addr);
-		[A,B,C,D,E,F] ->
-		    {ok,{A,B,C,D,E,F}}
-	    end;
-	_ ->
-	    getaddr_by_name(Addr)
-    end;
-getaddr(Addr) when is_list(Addr) ->
-    getaddr_by_name(Addr);
-getaddr(_) ->
-    {error, einval}.
-
-string_to_addr(Addr) when is_list(Addr) ->
-    XParts = string:tokens(Addr, ":-"),
-    try [erlang:list_to_integer(Hx,16) || Hx <- XParts] of
-	[A,B,C,D,E,F] ->
-	    {ok,{A,B,C,D,E,F}}
+getaddr(Addr) ->
+    try addr_to_mac(Addr) of
+	Mac -> Mac
     catch
 	error:_ ->
-	    {error, einval}
+	    if is_list(Addr) ->
+		    getaddr_by_name(Addr);
+	       true ->
+		    {error, einval}
+	    end
     end.
 
-%%
-%% getaddr_by_name(Name) -> {ok,Addr} | {error, Reason}
+-spec string_to_addr(String::string()) -> bt_mac().
+
+string_to_addr([A1,A0,$:,B1,B0,$:,C1,C0,$:,D1,D0,$:,E1,E0,$:,F1,F0]) ->
+    {list_to_integer([A1,A0], 16),
+     list_to_integer([B1,B0], 16),
+     list_to_integer([C1,C0], 16),
+     list_to_integer([D1,D0], 16),
+     list_to_integer([E1,E0], 16),
+     list_to_integer([F1,F0], 16)};
+string_to_addr([A1,A0,$-,B1,B0,$-,C1,C0,$-,D1,D0,$-,E1,E0,$-,F1,F0]) ->
+    {list_to_integer([A1,A0], 16),
+     list_to_integer([B1,B0], 16),
+     list_to_integer([C1,C0], 16),
+     list_to_integer([D1,D0], 16),
+     list_to_integer([E1,E0], 16),
+     list_to_integer([F1,F0], 16)};
+string_to_addr(_) ->
+    {error, einval}.
+
+
+
 %% Find address by name (may be wastlty improved)
-%%
+-spec getaddr_by_name(Name::string()) -> bt_mac() | {error, Reason::term()}.
 getaddr_by_name(Name) ->
     getaddr_by_name_(string:to_lower(Name), 
 		     string:tokens(os:cmd("bluetoothctl devices"), "\n")).
@@ -81,8 +106,10 @@ getaddr_by_name_(Name, [Line|Ls]) ->
     case string:tokens(Line, " ") of
 	["Device", Addr | Ns] -> 
 	    case string:to_lower(string:join(Ns, " ")) of
-		Name -> string_to_addr(Addr);
-		_ -> getaddr_by_name_(Name, Ls)
+		Name ->
+		    string_to_addr(Addr);
+		_ ->
+		    getaddr_by_name_(Name, Ls)
 	    end;
 	_ -> getaddr_by_name_(Name, Ls)
     end;
@@ -90,14 +117,24 @@ getaddr_by_name_(_Name, []) ->
     {error, enoent}.
 
 
+-spec uuid_to_string(uuid()) -> string().
 %% convert uuid to string format
+uuid_to_string(<<N:16>>) ->
+    uuid_to_string_(?BT_UUID16(N));
+uuid_to_string(<<N:32>>) ->
+    uuid_to_string_(?BT_UUID32(N));
 uuid_to_string(UUID) when ?is_uuid(UUID) ->
+    uuid_to_string_(UUID).
+
+uuid_to_string_(UUID) when ?is_uuid(UUID) ->
     ?UUID(TLow,TMid,THigh,Clock,Node) = UUID,
     Fmt = 
 	io_lib:format("~8.16.0B-~4.16.0B-~4.16.0B-~4.16.0B-~12.16.0B",
 		      [TLow,TMid,THigh,Clock,Node]),
     lists:flatten(Fmt).
 
+    
+-spec string_to_uuid(string()) -> uuid().
 %% convert uuid string format to bina
 string_to_uuid([X1,X2,X3,X4,X5,X6,X7,X8,$-,
 		Y1,Y2,Y3,Y4,$-,
@@ -114,25 +151,64 @@ string_to_uuid([X1,X2,X3,X4,X5,X6,X7,X8,$-,
 string_to_uuid(_) ->
     erlang:error(bad_arg).
 
+%% swap bytes 
+uuid_to_little(<<UUID:16>>) -> <<UUID:16/little>>;
+uuid_to_little(<<UUID:32>>) -> <<UUID:32/little>>;
+uuid_to_little(<<UUID:128>>) -> <<UUID:128/little>>.
+
 %%
 %% Format bluetooth address into a hex string
 %%
-format_address(A) when ?is_bt_address(A) ->
+format_address(A) when ?is_bt_mac(A); ?is_bt_bmac(A) ->
     case os:type() of
 	{unix,darwin} ->
 	    format_address_(A, $-);
 	_ ->
 	    format_address_(A, $:)
-    end;
-format_address(<<A,B,C,D,E,F>>) ->
-    format_address({A,B,C,D,E,F}).
+    end.
 		
 format_address_({A,B,C,D,E,F}, S) ->
-    [hexh(A),hexl(A),S,hexh(B),hexl(B),S,hexh(C),hexl(C),S,
-     hexh(D),hexl(D),S,hexh(E),hexl(E),S,hexh(F),hexl(F)].
+    [hex2(A),S,hex2(B),S,hex2(C),S,hex2(D),S,hex2(E),S,hex2(F)];
+format_address_(<<F,E,D,C,B,A>>,S) -> %% binary format is reversed (wire)
+    [hex2(A),S,hex2(B),S,hex2(C),S,hex2(D),S,hex2(E),S,hex2(F)].
 
-hexl(A) -> hex1(A band 16#f).
-hexh(A) -> hex1((A bsr 4) band 16#f).
 
-hex1(A) when A < 10 -> A+$0;
-hex1(A) -> (A-10)+$a.
+%% assume A is byte return two characters
+-spec hex2(X::byte()) -> [char()].
+hex2(A) -> tl(integer_to_list(A+16#100, 16)).
+
+
+%% locate a map with in a list of maps and return a
+%% the map as value and remove the matching map from list
+%% return the new list
+-spec maps_take(Value::term(), Key::term(), MapList::[map()]) ->
+	  {value, M::map(), MapList1::[map()]} | false.
+
+maps_take(Value, Key, MapList) ->
+    maps_take_(Value, Key, MapList, []).
+
+maps_take_(Value, Key, [M|Ms], Acc) ->
+    case maps:find(Key, M) of
+	{ok,Value} ->
+	    {value, M, lists:reverse(Acc, Ms)};
+	_ ->
+	    maps_take_(Value, Key, Ms, [M|Acc])
+    end;
+maps_take_(_Value, _Key, [], _) ->
+    false.
+
+%% locate a map with in a list of maps
+-spec maps_find(Value::term(), Key::term(), MapList::[map()]) ->
+	  M::map() | false.
+maps_find(Value, Key, MapList) ->
+    maps_find_(Value, Key, MapList).
+
+maps_find_(Value, Key, [M|Ms]) ->
+    case maps:find(Key, M) of
+	{ok,Value} ->
+	    M;
+	_ ->
+	    maps_find_(Value, Key, Ms)
+    end;
+maps_find_(_Value, _Key, []) ->
+    false.

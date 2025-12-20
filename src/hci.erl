@@ -7,7 +7,7 @@
 
 -module(hci).
 
--export([open/0, open/1]).
+-export([open/0, open/1, open/2]).
 -export([close/1]).
 -export([get_devices/0]).
 -export([i/0]).
@@ -29,8 +29,10 @@
 
 -include("../include/bt.hrl").
 -include("../include/hci.hrl").
--include("hci_api.hrl").
--include("bt_log.hrl").
+-include("../include/bt_log.hrl").
+
+-include("../include/hci_api.hrl").
+
 
 -define(GIAC, <<16#33,16#8B,16#9E>>).  %% General Inquiry access code
 -define(LIAC, <<16#00,16#8B,16#9E>>).  %% limited Inquiry access code
@@ -76,22 +78,23 @@ get_devices_(Hci, [{DevID,_}|Ds]) ->
 get_devices_(_Hci, []) ->
     [].
 
-find_device_(Hci, Name) ->
+find_device_(Hci, InterfaceName) ->
     {ok,Ds} = bt_hci:get_dev_list(Hci),
-    find_device_(Hci, Name, Ds).
+    find_device_(Hci, InterfaceName, Ds).
 
-find_device_(Hci, Name, [{DevID,_}|Ds]) ->
+find_device_(Hci, InterfaceName, [{DevID,_}|Ds]) ->
     case bt_hci:get_dev_info(Hci, DevID) of
 	{ok,Info} ->
-	    if Info#hci_dev_info.name =:= Name; Name =:= default ->
+	    if Info#hci_dev_info.name =:= InterfaceName; 
+	       InterfaceName =:= default ->
 		    ?map_from_record(hci_dev_info,Info);
 	       true ->
-		    find_device_(Hci, Name, Ds)
+		    find_device_(Hci, InterfaceName, Ds)
 	    end;
 	_Error ->
-	    find_device_(Hci, Name, Ds)
+	    find_device_(Hci, InterfaceName, Ds)
     end;
-find_device_(_Hci, _Name, []) ->
+find_device_(_Hci, _InterfaceName, []) ->
     false.
 
 -spec open(Name::string()|default) ->
@@ -99,14 +102,23 @@ find_device_(_Hci, _Name, []) ->
 %%open(DevID) when is_integer(DevID) ->
 %%    {ok,H} = bt_hci:open(),
 %%    bind_(H, DevID, ?HCI_CHANNEL_RAW);
-open(Name) when is_list(Name); Name =:= default ->
+open(InterfaceName) when is_list(InterfaceName); InterfaceName =:= default ->
+    open(InterfaceName, #{});
+open(Options) when is_map(Options) ->
+    open(default, Options).
+
+open(InterfaceName, Options) when is_list(InterfaceName); InterfaceName =:= default ->
     {ok,Hci} = bt_hci:open(),
-    case find_device_(Hci, Name) of
+    case find_device_(Hci, InterfaceName) of
 	false ->
 	    bt_hci:close(Hci),
 	    {error, enoent};
 	DevInfo ->
-	    bind_(Hci, maps:get(dev_id, DevInfo), ?HCI_CHANNEL_RAW)
+	    Channel = case maps:get(channel, Options, raw) of
+	        raw -> ?HCI_CHANNEL_RAW;
+	        user -> ?HCI_CHANNEL_USER
+	    end,
+	    bind_(Hci, maps:get(dev_id, DevInfo), Channel)
     end.
 
 -spec open() -> {ok, hci_handle()} | {error, hci_reason()}.
@@ -172,10 +184,10 @@ scan(Timeout) when is_integer(Timeout) ->
 scan(HciName) when is_list(HciName) ->
     scan(HciName, ?INQUIRY_TIMEOUT).
 
--spec scan(HciName::string()|default, Timeout::integer()) ->
+-spec scan(InterfaceName::string()|default, Timeout::integer()) ->
 	  {ok,[inquiry_info_t()]} | {error,hci_reason()}.
-scan(HciName, Timeout) when is_integer(Timeout) ->
-    case open(HciName) of
+scan(InterfaceName, Timeout) when is_integer(Timeout) ->
+    case open(InterfaceName) of
 	{ok,Hci} ->
 	    case bt_hci:inquiry(Hci, Timeout, 10, ?GIAC, 0) of
 		{ok,Is} ->
@@ -352,11 +364,16 @@ read_local_name(Hci, Timeout) ->
 
 %% sending data and calling procedures over HCI socket
 
-send(Hci,Opcode,Data) ->
-    Pkt = <<?HCI_COMMAND_PKT,Opcode:16/little,
+-define(ogf(Code), (((Code) bsr 10) band 16#3f)).
+-define(ocf(Code), ((Code) band 16#3ff)).
+
+send(Hci,Op,Data) ->
+    Pkt = <<?HCI_COMMAND_PKT,Op:16/little,
 	    (byte_size(Data)):8,Data/binary>>,
     R = bt_hci:write(Hci,Pkt),
-    ?debug("send ~p = ~p", [Pkt,R]),
+    ?debug("hci:send OGF=~p OCF=~p (~s) data=~p, r=~w~n",
+	   [?ogf(Op), ?ocf(Op),
+	    opcode_name(?ogf(Op),?ocf(Op)), Pkt, R]),
     R.
 
 send(Hci, OGF, OCF, Data) ->
@@ -414,15 +431,23 @@ wait_(_Hci,_Opcode,_Event,_Decode,0,TRef) ->
     {error, timeout};
 
 wait_(Hci,Opcode,Event,Decode,Try,TRef) ->
-    ok = bt_hci:select(Hci, read),
-    receive
-	{select,Hci,undefined,ready_input} ->
-	    response_(Hci,Opcode,Event,Decode,Try,TRef);
-	{timeout,TRef,_} ->
-	    cancel_select(Hci, read),
-	    timeout;
-	Other ->
-	    ?error("hci:wait/6 got ~p\n", [Other]),
+    case bt_hci:read(Hci) of
+	{error, eagain} ->
+	    ok = bt_hci:select(Hci, read),
+	    receive
+		{select,Hci,_,ready_input} ->
+		    wait_(Hci,Opcode,Event,Decode,Try,TRef);
+		{timeout,TRef,_} ->
+		    cancel_select(Hci, read),
+		    timeout;
+		Other ->
+		    ?error("hci:wait/6 got ~p", [Other]),
+		    error
+	    end;
+	{ok, Data} ->
+	    response_(Hci,Data,Opcode,Event,Decode,Try,TRef);
+	{error, Reason} ->
+	    ?error("hci:wait read error ~p", [Reason]),
 	    error
     end.
 
@@ -437,68 +462,65 @@ cancel_select(Hci, Mode) ->
 	    end
     end.
     
-response_(Hci,Opcode,Event,Decode,Try,TRef) ->
-    case bt_hci:read(Hci) of
-	{ok, _Data0 = <<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>} ->
-	    ?debug("Got data ~p", [_Data0]),
-	    case Evt of
-		?EVT_CMD_STATUS ->
-		    ?debug("got cmd_status event=~p, evt=~p, packet=~p",
-			   [Evt,Event,Packet]),
-		    case Packet of
-			<<?evt_cmd_status_bin(0,_Ncmd,Opcode),_R/binary>> ->
-			    if Event =/= -1, Evt =/= Event ->
-				    wait_(Hci,Opcode,Event,Decode,Try-1,TRef);
-			       true ->
-				    ok
-			    end;
-			<<?evt_cmd_status_bin(Status,_Ncmd,Opcode),_R/binary>> ->
-			    {error, decode_status(Status)};
-			<<?evt_cmd_status_bin(_S,_Ncmd,_Opcode),_R/binary>> ->
+response_(Hci,_Data0=(<<_:8,Evt:8,Plen:8,Packet:Plen/binary,_/binary>>),
+	  Opcode,Event,Decode,Try,TRef) ->
+    ?debug("Got data ~p", [_Data0]),
+    case Evt of
+	?EVT_CMD_STATUS ->
+	    ?debug("got cmd_status event=~p, evt=~p, packet=~p",
+		   [Evt,Event,Packet]),
+	    case Packet of
+		<<?evt_cmd_status_bin(0,_Ncmd,Opcode),_R/binary>> ->
+		    if Event =/= -1, Evt =/= Event ->
+			    wait_(Hci,Opcode,Event,Decode,Try-1,TRef);
+		       true ->
+			    ok
+		    end;
+		<<?evt_cmd_status_bin(Status,_Ncmd,Opcode),_R/binary>> ->
+		    {error, decode_status(Status)};
+		<<?evt_cmd_status_bin(_S,_Ncmd,_Opcode),_R/binary>> ->
+		    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
+	    end;
+	?EVT_CMD_COMPLETE ->
+	    ?debug("got cmd_complete event=~p, evt=~p, packet=~p",
+		   [Evt,Event,Packet]),
+	    case Packet of
+		<<?evt_cmd_complete_bin(_Ncmd,Opcode),R/binary>> ->
+		    reply(Decode, R);
+		<<?evt_cmd_complete_bin(_Ncmd,_Opcode),_R/binary>> ->
+		    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
+	    end;
+	
+	?EVT_REMOTE_NAME_REQ_COMPLETE when Evt =:= Event ->
+	    ?debug("got remote_name_req_complete"),
+	    {ok, hci_api:decode_evt_remote_name_req_complete(Packet)};
+	?EVT_LE_META_EVENT ->
+	    ?debug("got evt_le_meta_event"),
+	    case Packet of
+		<<?evt_le_meta_event_bin(SEvt,_D1),LePacket/binary>> ->
+		    if SEvt =:= Event ->
+			    Le = hci_api:decode_le(SEvt, LePacket),
+			    {ok,Le};
+		       true ->
 			    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
-		    end;
-		?EVT_CMD_COMPLETE ->
-		    ?debug("got cmd_complete event=~p, evt=~p, packet=~p",
-			 [Evt,Event,Packet]),
-		    case Packet of
-			<<?evt_cmd_complete_bin(_Ncmd,Opcode),R/binary>> ->
-			    reply(Decode, R);
-			<<?evt_cmd_complete_bin(_Ncmd,_Opcode),_R/binary>> ->
-			    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
-		    end;
-
-		?EVT_REMOTE_NAME_REQ_COMPLETE when Evt =:= Event ->
-		    ?debug("got remote_name_req_complete"),
-		    {ok, hci_api:decode_evt_remote_name_req_complete(Packet)};
-		?EVT_LE_META_EVENT ->
-		    ?debug("got evt_le_meta_event"),
-		    case Packet of
-			<<?evt_le_meta_event_bin(SEvt,_D1),LePacket/binary>> ->
-			    if SEvt =:= Event ->
-				    Le = hci_api:decode_le(SEvt, LePacket),
-				    {ok,Le};
-			       true ->
-				    wait_(Hci,Opcode,Event,Decode,Try-1,TRef)
-			    end
-		    end;
-		_ ->
-		    try hci_api:decode(Evt,Packet) of
-			ReplyEvent ->
-			    ?debug("decoded event"),
-			    {ok, ReplyEvent}
-		    catch
-			error:Reason:StackTrace ->
-			    ?error("decode error: ~p ~p", 
-				   [Reason, StackTrace]),
-			    {error, Reason}
 		    end
 	    end;
-	{ok, _Data0} ->
-	    ?debug("Got data ~p", [_Data0]),
-            wait_(Hci,Opcode,Event,Decode,Try-1,TRef);
-        Error = {error,_} ->
-            Error
-    end.
+	_ ->
+	    try hci_api:decode(Evt,Packet) of
+		ReplyEvent ->
+		    ?debug("decoded event"),
+		    {ok, ReplyEvent}
+	    catch
+		error:Reason:StackTrace ->
+		    ?error("decode error: ~p ~p", 
+			   [Reason, StackTrace]),
+		    {error, Reason}
+	    end
+    end;
+response_(Hci,_Data0,Opcode,Event,Decode,Try,TRef) ->
+    ?debug("Got data ~p", [_Data0]),
+    wait_(Hci,Opcode,Event,Decode,Try-1,TRef).
+
 
 reply(undefined, Data) ->
     {ok,Data};
@@ -509,6 +531,17 @@ cname(<<0,_/binary>>) -> [];
 cname(<<C,Cs/binary>>) -> [C|cname(Cs)];
 cname(<<>>) -> [].
 
+%% Translate OGF/OCF to human-readable name for debugging
+opcode_name(1, 6) -> "DISCONNECT";
+opcode_name(1, 13) -> "CREATE_CONN";
+opcode_name(8, 13) -> "LE_CREATE_CONN";
+opcode_name(8, 14) -> "LE_CREATE_CONN_CANCEL";
+opcode_name(8, 19) -> "LE_CONN_UPDATE";
+opcode_name(3, 3) -> "RESET";
+opcode_name(8, 11) -> "LE_SET_SCAN_ENABLE";
+opcode_name(8, 10) -> "LE_SET_SCAN_PARAM";
+opcode_name(8, 12) -> "LE_SET_ADV_ENABLE";
+opcode_name(OGF, OCF) -> io_lib:format("OGF~p_OCF~p", [OGF, OCF]).
 
 start_timer(0) -> undefined;
 start_timer(Timeout) -> erlang:start_timer(Timeout, self(), timeout).

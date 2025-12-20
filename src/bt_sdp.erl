@@ -820,7 +820,7 @@ map_fmt(_Fun, _Sep, []) ->  [].
 uuid_128(<<UUID:16>>) -> ?BT_UUID16(UUID);
 uuid_128(<<UUID:32>>) -> ?BT_UUID32(UUID);
 uuid_128(<<>>) -> <<>>;
-uuid_128(UUID) when ?is_uuid(UUID) ->  UUID.
+uuid_128(UUID) when ?is_uuid128(UUID) ->  UUID.
 
 %% Try convert UUID into symbolic name
 uuid_to_string(UUID) ->
@@ -939,7 +939,11 @@ attr(ID,_LanuageBase,_UUID) ->
 %%
 %% Universal Attributes
 %%
-attr16(A) -> attr16(A, <<A:16>>).
+attr16(A) ->
+    {ok, Object} = bt_db:lookup(universal_attributes, A),
+    proplists:get_value(<<"name">>, Object).
+
+%% attr16(A) -> attr16(A, <<A:16>>).
 
 attr16(?ATTR_ServiceRecordHandle,_UUID) -> "ServiceRecordHandle";
 attr16(?ATTR_ServiceClassIDList,_UUID) -> "ServiceClassIDList";

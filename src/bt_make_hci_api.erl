@@ -42,7 +42,7 @@
 main() ->
     {ok,Defs0} = file:consult(filename:join(code:priv_dir(bt), "hci.def")),
     {ok,Erl} = file:open("hci_api.erl", [write]),
-    {ok,Hrl} = file:open("hci_api.hrl", [write]),
+    {ok,Hrl} = file:open("../include/hci_api.hrl", [write]),
     write_erl_header(Erl),
     write_hrl_header(Hrl),
     R = try write(Hrl, Erl, Defs0, Defs0, "", "", [], [], []) of
@@ -61,7 +61,7 @@ write_erl_header(Erl) ->
     io:format(Erl, "%% -*- erlang -*-\n", []),
     io:format(Erl, "-module(hci_api).\n", []),
     io:format(Erl, "-compile(export_all).\n", []),
-    io:format(Erl, "-include(\"hci_api.hrl\").\n", []),
+    io:format(Erl, "-include(\"../include/hci_api.hrl\").\n", []),
     io:format(Erl, "\n", []),
     io:format(Erl, "~s\n\n", ["
 cname(<<0,_/binary>>) -> [];

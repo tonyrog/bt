@@ -23,6 +23,10 @@
 
 -include("uuid.hrl").
 
+-type bt_mac() :: {byte(),byte(),byte(),byte(),byte(),byte()}.
+-type bt_bmac() :: <<_:6>>.  %% bytes reversed with bt_mac() !
+-type bt_addr() :: bt_mac() | bt_bmac() | string().
+
 %% Bluetooth base uuid = ?BT_UUID(0)
 -define(BT_UUID32(N),
 	?UUID(N,16#0000,16#1000,16#8000,16#00805f9b34fb)).
@@ -31,12 +35,15 @@
 -define(BT_UUID16(N),
      <<16#0000:16,N:16,16#0000:16,16#1000:16,16#8000:16,16#00805f9b34fb:48>>).
 
+-define(is_bt_mac(A),
+	( (tuple_size((A)) =:= 6) 
+	  andalso 
+	    ((element(1,(A)) bor element(2,(A)) bor  element(3,(A)) bor
+		  element(4,(A)) bor element(5,(A)) bor  element(6,(A))) band
+		 -16#100 == 0))).
+-define(is_bt_bmac(A), (byte_size((A)) =:= 6)).
 
--define(is_bt_address(A),
-	is_tuple((A)), size((A)) =:= 6,
-	((element(1,(A)) bor element(2,(A)) bor  element(3,(A)) bor
-	  element(4,(A)) bor element(5,(A)) bor  element(6,(A))) band
-	 -16#100 == 0)).
+-define(is_bt_address(A), (?is_bt_mac((A)) orelse ?is_bt_bmac((A)))).
 
 -define(never, {{0,0,0},{0,0,0}}).
 
@@ -61,6 +68,10 @@
 %% Range 0x1001-0xFFFF dynamically assigned.
 -define(L2CAP_PSM_DynamicStart,     16#1001).
 -define(L2CAP_PSM_DynamicEnd,	    16#FFFF).
+
+-define(ADDR_TO_BIN(A),
+	<<(element(6,(A))),(element(5,(A))),(element(4,(A))),
+	  (element(3,(A))),(element(2,(A))),(element(1,(A)))>>).
     
 -endif.
 
