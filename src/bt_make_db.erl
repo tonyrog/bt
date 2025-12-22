@@ -64,22 +64,22 @@ create_db(Filename, DbType, KeyNameList, Entries) ->
     %% table1, table2 .. tableN
     StartPosTable = 
 	lists:foldl(
-	  fun({_Name,{uint,16},{index,First,Last,Sorted}}, Acc) ->
+	  fun({_Name,{uint,16},{index,_First,_Last,Sorted}}, Acc) ->
 		  IndexData = [<<Value:16, Pos:32>> || {Value,Pos} <- Sorted],
 		  {ok, IndPos} = file:position(Fd, cur),
 		  ok = file:write(Fd, IndexData),
 		  [IndPos|Acc];
-	     ({_Name,_DbType,_DbType,{indirect,First,Last,Array}},Acc) ->
+	     ({_Name,_DbType,{indirect,_First,_Last,Array}},Acc) ->
 		  IndexData = [<<Pos:32>> || {_I,Pos} <- Array],
 		  {ok, IndPos} = file:position(Fd, cur),
 		  ok = file:write(Fd, IndexData),
 		  [IndPos|Acc];
-	     ({_Name,string,{hash,First,Last,N,Hashed}},Acc) ->
+	     ({_Name,string,{hash,_First,_Last,_N,Hashed}},Acc) ->
 		  IndexData = [<<Pos:32>> || {_I,Pos} <- Hashed],
 		  {ok, IndPos} = file:position(Fd, cur),
 		  ok = file:write(Fd, IndexData),
 		  [IndPos|Acc];
-	     ({_Name,string,{hashx,First,Last,N,Hashed}},Acc) ->
+	     ({_Name,string,{hashx,_First,_Last,_N,Hashed}},Acc) ->
 		  IndexData = [<<H:32,Pos:32>> || {_I,H,Pos} <- Hashed],
 		  {ok, IndPos} = file:position(Fd, cur),
 		  ok = file:write(Fd, IndexData),
@@ -161,7 +161,7 @@ search_hash_len(HashEntries, N, Limit, {Best,BestN}) when N < Limit ->
 		    search_hash_len(HashEntries, N+2, Limit, {Best,BestN})
 	    end
     end;
-search_hash_len(HashEntries, _N, _Limit, {Best,BestN})  ->
+search_hash_len(HashEntries, _N, _Limit, {_Best,BestN})  ->
     Hashed = [{H rem BestN,H,Pos} || {H,Pos} <- HashEntries],
     Hashed1 = lists:keysort(1, Hashed),
     First = element(1, hd(Hashed1)),
@@ -177,8 +177,10 @@ number_of_hash_conflicts(HashEntries) ->
 
 update_int(PosEntries) ->
     case lists:keysort(1, PosEntries) of
-	[]  -> PosEntries;
-	[_] -> PosEntries;
+	[]  -> 
+	    {index,0,0,[]};
+	Sorted=[{Value,_}] -> 
+	    {index,Value,Value,Sorted};
 	Sorted = [{FirstValue,_} | Entries] ->
 	    {LastValue,_} = lists:last(Entries),
 	    Len = length(Sorted),

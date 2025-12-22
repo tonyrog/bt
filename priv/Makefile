@@ -1,8 +1,9 @@
 #
 # Make all database files
 #
+URL=https://bitbucket.org/bluetooth-SIG/public
 
-ASSIGNED_DIR = ../doc/public/assigned_numbers
+ASSIGNED_DIR = ./public/assigned_numbers
 UUIDS_DIR = $(ASSIGNED_DIR)/uuids
 COMPANY_DIR = $(ASSIGNED_DIR)/company_identifiers
 SDP_DIR = $(ASSIGNED_DIR)/service_discovery
@@ -43,6 +44,11 @@ all: $(DB_FILES)
 clean:
 	rm $(DB_FILES) escript_db.beam
 
+pull:
+	git pull $(URL)
+
+clone:
+	git clone $(URL)
+
 escript_db.beam:	escript_db.erl
 	erlc escript_db.erl
-
